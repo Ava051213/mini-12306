@@ -16,6 +16,22 @@ public class UserExceptionHandler {
         return new ErrorResponse(exception.getMessage());
     }
 
+    @ExceptionHandler(InvalidCredentialsException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    public ErrorResponse handleInvalidCredentials(
+            InvalidCredentialsException exception
+    ) {
+        return new ErrorResponse(exception.getMessage());
+    }
+
+    @ExceptionHandler(NotLoggedInException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    public ErrorResponse handleNotLoggedIn(
+            NotLoggedInException exception
+    ) {
+        return new ErrorResponse(exception.getMessage());
+    }
+
     public record ErrorResponse(String message) {
 
     }
