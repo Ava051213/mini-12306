@@ -65,14 +65,14 @@
 
 ## 已核对的技术与文件
 
-截至 2026-10-22：
+截至 2026-10-23（数据库版本沿用此前实查记录）：
 
 | 项目 | 当前情况 |
 | --- | --- |
 | 项目坐标 | `com.mia:mini-12306:0.0.1-SNAPSHOT` |
 | Java / Spring Boot | Java 17 / Spring Boot 4.0.8 |
 | Web | `spring-boot-starter-webmvc` |
-| 持久层 | MyBatis Spring Boot Starter 4.0.1；用户注册 Mapper 已实现 |
+| 持久层 | MyBatis Spring Boot Starter 4.0.1；用户注册、按用户名及 ID 查询已实现 |
 | 其他依赖 | MySQL Connector/J、Lombok、Spring Security Crypto（BCrypt）、Spring Boot Validation；Lombok 已配置注解处理器 |
 | 数据库 | Compose 镜像 `mysql:8.4`；此前实际查询版本为 8.4.11 |
 | 数据库连接 | 本机 `localhost:3307` → 容器 `3306`，数据库 `mini_12306` |
@@ -83,13 +83,20 @@
 - `pom.xml`：项目依赖、Java 版本、构建和 Lombok 注解处理配置。
 - `compose.yaml`：本地 MySQL 服务及 `restart: unless-stopped` 配置。
 - `src/main/resources/application.yaml`：通过 `optional:file:.env[.properties]` 导入本地凭据；使用 root 连接数据库。当前 JDBC 参数用于本地开发，不作为部署配置范例。
-- `src/main/java/com/mia/mini12306/Mini12306Application.java`：当前唯一的主源码类，为 Spring Boot 启动入口。
+- `src/main/java/com/mia/mini12306/Mini12306Application.java`：Spring Boot 启动入口。
 - `src/test/java/com/mia/mini12306/Mini12306ApplicationTests.java`：包含上下文启动测试及数据库连通性测试。
-- 连通性测试用 `JdbcTemplate` 执行 `SELECT 1`、`SELECT DATABASE()`，断言结果分别为 `1`、`mini_12306`。这不代表业务逻辑已经经过测试。
+- 连通性测试用 `JdbcTemplate` 执行 `SELECT 1`、`SELECT DATABASE()`，断言结果分别为 `1`、`mini_12306`。这两项测试验证应用启动与数据库连接；注册业务另由 `UserRegistrationIntegrationTests` 验证。
 - `users` 表已由用户在 IDEA 数据库控制台创建并通过 `SHOW CREATE TABLE` 核验；使用 `utf8mb4_0900_ai_ci`，用户名唯一约束不区分大小写。
 - 用户注册代码位于 `src/main/java/com/mia/mini12306/user/`：`UserController`、`UserRegistrationService`、`UserMapper`、`UserAccount`、请求和响应 DTO、重复用户名异常及异常处理器。
 - 注册请求用户名限制为 3–50 位 ASCII 字母、数字或下划线；密码限制为 8–72 个字符且 UTF-8 编码不超过 72 字节。密码使用 BCrypt 哈希后存储，响应不包含哈希。
 - 注册接口为 `POST /api/users/register`，成功返回 201；重复用户名返回 409；参数校验失败返回 400。
+- `config/PasswordEncoderConfig.java` 声明 BCrypt `PasswordEncoder` Bean，注册与登录服务通过构造器共同注入；注册使用 `encode`，登录使用 `matches`。
+- 登录相关代码：`UserLoginService`、`dto/UserLoginRequest`、`dto/UserProfileResponse`、`InvalidCredentialsException`、`NotLoggedInException`，HTTP 会话处理位于 `controller/UserController`。
+- `POST /api/users/login` 成功返回 200 和公开资料；账号不存在、密码不匹配或密码超过 72 个 UTF-8 字节均抛认证失败异常并返回 401。请求 DTO 使用 `@NotBlank`，空白或缺失字段由参数校验处理。
+- 登录状态采用 Servlet `HttpSession`：认证成功后使已有会话失效，再建立新会话；只保存 `Long` 类型的 `LOGIN_USER_ID`，空闲超时为 1800 秒。没有引入 JWT、Redis 或完整 Spring Security 过滤器链。
+- `GET /api/users/me` 使用 `getSession(false)` 读取会话用户 ID，再通过 Service 和 `UserMapper.findById` 查询；没有有效登录身份或用户不存在时返回 401。该 SQL 不读取密码哈希。
+- `POST /api/users/logout` 使当前会话失效并返回 204；没有会话时同样返回 204，不删除账号，不退出其他独立会话。
+- 登录及当前用户资料统一返回 `UserProfileResponse`（`id`、`username`、`createdAt`），不直接返回包含哈希的实体。
 - `target/` 是构建产物，`.idea/` 是本地 IDE 配置，`HELP.md` 是生成的帮助文档；均已被 Git 忽略。
 
 ## 本地环境经验
@@ -109,20 +116,32 @@
 4. 用户注册闭环已实现：数据表、输入校验、BCrypt 密码哈希、MyBatis 持久化、成功响应和重复用户名错误处理。
 5. 用户于 2026-10-22 运行 `mvn test`：6 项测试通过，0 失败、0 错误、0 跳过；覆盖应用上下文和数据库连接、注册成功及哈希验证、重复用户名、无效输入、密码超过 BCrypt UTF-8 字节上限。
 6. 注册成功用例使用随机用户名写入本地开发数据库；集成测试不会清理注册记录。最新测试未再出现 MyBatis “No mapper found” 警告。
+7. 用户亲自实现登录、当前用户查询和退出登录。2026-10-23 首次运行登录测试因数据库连接被拒绝而失败；随后重跑成功，未据此修改业务代码，也未确认首次拒绝连接的具体环境原因。
+8. 用户于 2026-10-23 运行 `mvn "-Dtest=UserLoginIntegrationTests" test`：最初的登录闭环测试 1 项通过；随后补齐失败场景，运行 `mvn test`：10 项通过，0 失败、0 错误、0 跳过（基础 2 项、注册 4 项、登录 4 项）。助手只读核对源码与用户提供的运行输出，未代跑测试。
+9. `UserLoginIntegrationTests` 验证注册后登录、携带会话查询当前用户、退出返回 204 和原会话失效、退出后无会话查询返回 401；另有错误密码、账号不存在、独立未登录查询 3 个测试。登录及查询响应不含密码/哈希字段与实际敏感值；认证失败不创建新会话。登录测试同样会保留随机注册记录。
+10. 主对话于 2026-10-23 完成只读验收：核对 Controller、Service、Mapper、DTO、异常处理、共享 PasswordEncoder 及注册回归测试，未发现阻断当前最小闭环的问题，本地学习阶段验收通过。读取现有 Surefire XML 报告确认基础 2 项、注册 4 项、登录 4 项，共 10 项通过，0 失败、0 错误、0 跳过；报告文件时间为当日 09:54:11–09:54:14，按文件时间检查未发现报告生成后修改的源码或测试。本次未重新执行构建或测试，验收不包含下列尚未验证项或部署安全配置。
+
+### 当前验证边界与待完善项
+
+- 当前通过 MockMvc 显式传递 `MockHttpSession` 验证会话延续；尚未通过真实 HTTP 客户端验证 `JSESSIONID` cookie 收发和旧 cookie 在退出后的行为，也未实测 30 分钟自然超时。
+- 登录前已有会话的替换、超长登录密码、空白登录输入、会话对应账号已不存在、无会话时退出等分支已写入实现，但本轮未为它们补充专项测试。
+- 当前身份检查只在 `/me` 中完成；未来乘车人、订单等受保护接口必须从登录身份确定账号归属，不能直接信任客户端提交的用户 ID。统一认证入口随后续模块需要讨论。
+- 当前未实现 CSRF 防护或部署环境的 cookie 安全配置；浏览器前端接入或部署时继续完善。注册参数校验失败的框架日志中可出现被拒绝的密码输入，响应不泄露的测试不代表日志也已完成脱敏，日志脱敏留待处理。
 
 已确认推送到 GitHub 的提交：
 
 - `6c60ac2` — `chore: initialize Spring Boot project`
 - `9c605c2` — `chore: add Docker Compose configuration for local MySQL`
 - `61e0ae8` — `chore: configure MySQL datasource and add connectivity test`
+- `e8f27d2` — `feat: add user registration`
 
 ## 学习顺序
 
 | 顺序 | 功能 | 建议学习目标与完成条件 |
 | --- | --- | --- |
 | 0 | 项目基础（已完成） | 环境、Git、容器数据库及应用实际连接验证 |
-| 1 | 用户注册 | 讨论表字段与约束，走通请求、校验、持久化、响应和测试；理解重复注册及密码存储 |
-| 2 | 登录与用户信息 | 逐步确定登录方式、登录状态和访问控制，完成用户信息查询 |
+| 1 | 用户注册（已完成） | 讨论表字段与约束，走通请求、校验、持久化、响应和测试；理解重复注册及密码存储 |
+| 2 | 登录与用户信息（最小闭环验收通过） | BCrypt 验证、HttpSession 登录态、当前用户查询、退出及 401 验证 |
 | 3 | 乘车人 | 建立乘车人与账号的关系，完成基本增查改；删除规则另行讨论 |
 | 4 | 车次和乘车区间 | 建立精简的示例数据，完成指定日期和区间的车次查询 |
 | 5 | 库存与创建订单 | 通过数据库事务和条件扣减保证库存不为负，验证失败时回滚、库存不足时拒绝下单，以及并发下不超卖 |
@@ -161,11 +180,19 @@
 - 具体实现位于同包路径下 `service/impl/UserLoginServiceImpl.java` 的 `register`。该方法涉及校验链、Redisson 锁、多个表写入、Redis 和布隆过滤器，远超精简版第一步所需；先理解 Controller 如何把 HTTP 请求交给 Service，再只挑业务必需的概念继续追踪。
 - 参考仓库目录和代码路径来自 2026-10-22 对 `main` 的核验。仓库会变化，继续阅读时复核。
 
+本轮登录流程定向阅读已核验（`main`，未固定提交版本）：
+
+- `services/user-service/src/main/java/org/opengoofy/index12306/biz/userservice/controller/UserLoginController.java` 提供登录、检查登录和退出入口，委托 `UserLoginService`。
+- `service/impl/UserLoginServiceImpl.java` 的 `login` 解析用户名/手机号/邮箱，再经 Mapper 查询账号；当前读取到的代码使用用户名与请求密码构造查询条件。本项目继续使用已有 BCrypt 哈希与 `matches` 校验，不照搬该查询方式。
+- 该实现通过 `JWTUtil.generateAccessToken` 生成 token，将登录资料按 token 存入 `DistributedCache`，有效期 30 分钟；`checkLogin` 读缓存，`logout` 删除缓存。仅凭这几个方法不能推断所有受保护接口的完整鉴权链。
+- `UserInfoController.queryUserByUsername` 接收用户名查询资料，与本项目从会话识别当前用户的 `/me` 语义不同。
+- 原项目采用 JWT 与分布式缓存；本单体应用选择 Servlet 会话，不引入上述组件。Controller 负责 HTTP/会话，Service 负责凭据验证和资料查询，Mapper 负责 SQL；后续身份共享方式再按业务需要设计。
+
 ## 当前停留点与交接规则
 
-- 当前阶段：用户注册最小闭环已由用户亲自实现并验证。注册表和接口可用于后续登录流程。
-- 下一步：进入登录与用户信息模块。沿用小步教学，由用户亲自操作；先确认登录方式、登录状态及访问控制的最小方案，再逐步实现并测试。注册目前没有登录态或权限控制。
-- 本文件已由用户提交并纳入 Git 跟踪；当前规划更新尚未提交，推送状态未核实。后续更新不在文档内维护自身提交编号，以免造成循环修改；模块交接时重新检查实际 Git 状态。
+- 当前阶段：注册已提交并推送（`e8f27d2`）；登录、当前用户信息和退出最小闭环已由用户亲自实现，2026-10-23 全量 10 项测试通过，主对话只读验收通过。用户已提交登录功能：`5ffa315` — `feat: add login, current user lookup and logout`，尚未推送。
+- 下一步：由用户单独审阅并提交交接文档，再推送本模块提交，完成 Git 收尾后进入乘车人模块，讨论账号归属及基本新增、查询、修改流程。继续小步教学，不替用户修改业务文件或执行构建、测试、容器及 Git 写操作。
+- 2026-10-23 提交后只读检查：`main` 比本地 `origin/main` 引用领先 1 个提交，工作区仅有本文件修改。用户已重新暂存并提交完整的 11 个业务与测试文件，此前暂存区为空壳的问题已解决。助手只更新本文件，未执行构建、测试、暂存、提交或推送。本文件注册完成记录、本轮登录和验收记录尚未提交。后续更新不在文档内维护自身提交编号，以免造成循环修改。
 - 主对话给模块对话的任务应包含：目标、已知前提、范围、需要讨论的决定，以及完成后的验证要求。
 - 模块对话结束时更新本文件：实际完成的功能、关键设计决定、验证命令及结果、已知问题、下一步；有业务提交时记录其编号。未验证或未推送的状态必须明确标注。
 - 不复制完整聊天日志；保留继续学习必需的信息。进度改变时替换过期的“当前停留点”，避免累积互相冲突的指令。
