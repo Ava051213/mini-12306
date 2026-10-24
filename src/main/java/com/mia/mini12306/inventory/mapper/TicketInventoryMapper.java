@@ -31,4 +31,15 @@ public interface TicketInventoryMapper {
     int decrementIfAvailable(
             @Param("trainTripId") Long trainTripId
     );
+
+    // Restore one ticket without exceeding the configured capacity.
+    @Update("""
+            UPDATE ticket_inventory
+            SET remaining_tickets = remaining_tickets + 1
+            WHERE train_trip_id = #{trainTripId}
+              AND remaining_tickets < total_tickets
+            """)
+    int restoreOneIfNotFull(
+            @Param("trainTripId") Long trainTripId
+    );
 }

@@ -10,6 +10,8 @@ import com.mia.mini12306.passenger.PassengerService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 public class TicketOrderService {
 
@@ -66,5 +68,80 @@ public class TicketOrderService {
         }
 
         return saved;
+    }
+
+    public List<TicketOrder> findAll(Long userId) {
+        return ticketOrderMapper.findAllByUserId(userId);
+    }
+
+    public TicketOrder findById(Long userId, Long id) {
+        // Apply ownership in the database query.
+        TicketOrder order = ticketOrderMapper.findByIdAndUserId(id, userId);
+
+        // Hide whether the order belongs to another account.
+        if(order == null) {
+            throw new OrderNotFoundException();
+        }
+
+        return order;
+    }
+
+    @Transactional
+    public TicketOrder pay(Long userId, Long id) {
+        // Compete for the transition using the current database state.
+        int affectedRows = ticketOrderMapper.updateStatusIfPending(
+                id, userId, OrderStatus.PAID
+        );
+
+        TicketOrder order = findByIdForUpdate(userId, id);
+
+        // Repeated payment succeeds; a cancelled order cannot be paid.
+        if(affectedRows == 0
+                && order.getStatus() != OrderStatus.PAID) {
+            throw new OrderStateConflictException("当前订单状态不允许支付");
+        }
+
+        return order;
+    }
+
+    @Transactional
+    public TicketOrder cancel(Long userId, Long id) {
+        int affectedRows = ticketOrderMapper.updateStatusIfPending(
+                id, userId, OrderStatus.CANCELLED
+        );
+
+        TicketOrder order = findByIdForUpdate(userId, id);
+
+        if(affectedRows == 0) {
+            // A repeated cancellation must not restore stock again.
+            if(order.getStatus() == OrderStatus.CANCELLED) {
+                return order;
+            }
+
+            throw new OrderStateConflictException("当前订单状态不允许取消");
+        }
+
+        // Restore stock only for the request that changed the order state.
+        int restoredRows = ticketInventoryMapper.restoreOneIfNotFull(
+                order.getTrainTripId()
+        );
+
+        if(restoredRows != 1) {
+            // Roll back the order transition if stock cannot be restored.
+            throw new IllegalStateException("Cancelled order inventory could not be restored");
+        }
+
+        return order;
+    }
+
+    private TicketOrder findByIdForUpdate(Long userId, Long id) {
+        // Read the latest owned order within the caller's transaction.
+        TicketOrder order = ticketOrderMapper.findByIdAndUserIdForUpdate(id, userId);
+
+        if(order == null) {
+            throw new OrderNotFoundException();
+        }
+
+        return order;
     }
 }
