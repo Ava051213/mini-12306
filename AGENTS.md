@@ -157,6 +157,7 @@
 - `61e0ae8` — `chore: configure MySQL datasource and add connectivity test`
 - `e8f27d2` — `feat: add user registration`
 - `5ffa315` — `feat: add login, current user lookup and logout`
+- `9423424` — `feat: add passenger management and account isolation`（2026-10-24 用户确认已推送，本地 `origin/main` 也已包含该提交）
 
 ## 学习顺序
 
@@ -166,7 +167,7 @@
 | 1 | 用户注册（已完成） | 讨论表字段与约束，走通请求、校验、持久化、响应和测试；理解重复注册及密码存储 |
 | 2 | 登录与用户信息（最小闭环验收通过） | BCrypt 验证、HttpSession 登录态、当前用户查询、退出及 401 验证 |
 | 3 | 乘车人（最小闭环验收通过） | 账号归属、基本增查改及五项集成测试已完成；删除规则另行讨论 |
-| 4 | 车次和乘车区间 | 建立精简的示例数据，完成指定日期和区间的车次查询 |
+| 4 | 车次查询（最小闭环验收通过） | 通过仓库中的 SQL 初始化示例车次，按日期和固定起终点查询；库存留到下一模块 |
 | 5 | 库存与创建订单 | 通过数据库事务和条件扣减保证库存不为负，验证失败时回滚、库存不足时拒绝下单，以及并发下不超卖 |
 | 6 | 订单后续流程 | 查询、取消、恢复库存和模拟支付，验证状态变化 |
 | 7 | 完善与进阶 | 结合已实现流程评估异常处理、并发问题、索引及部署，不提前堆砌框架 |
@@ -222,11 +223,35 @@
 - `frameworks/bizs/user/src/main/java/org/opengoofy/index12306/frameworks/starter/user/core/UserTransmitFilter.java` 从请求头构造用户资料并写入 `UserContext`，在 finally 中清理；`UserContext` 使用线程上下文保存资料。本轮未核验网关对身份头的验证或覆盖行为，不能把该过滤器本身等同于完整认证。
 - 精简版继续使用已有 Servlet 会话，通过 `CurrentUserSession` 复用身份读取；乘车人归属由服务端确定，查询和修改 SQL 均限制 user_id。不引入原项目的缓存、幂等组件或线程上下文。实际表结构、接口、实现和验证结果见“乘车人模块最小闭环验收通过”。
 
+本轮车次查询定向阅读已核验（2026-10-24，读取参考仓库 `main` 原始源码，未固定提交版本）：
+
+- 查询代码位于 `services/ticket-service/src/main/java/org/opengoofy/index12306/biz/ticketservice/`。`controller/TicketController.java` 的 `GET /api/ticket-service/ticket/query` 接收 `TicketPageQueryReqDTO`，实际委托 `TicketService.pageListTicketQueryV1`；不要仅根据同时存在的 V2 方法推断当前入口使用 V2。
+- `dto/req/TicketPageQueryReqDTO.java` 包含 fromStation、toStation、departureDate、departure、arrival；departureDate 使用 `@DateTimeFormat(pattern = "yyyy-MM-dd")`，DTO 继承公共 PageRequest。命名包含分页不代表已核验的方法实际执行数据库分页。
+- `service/impl/TicketServiceImpl.java` 的 V1 查询先调用查询责任链，再查询站点代码到地区的缓存映射；缓存未命中时由 StationMapper 读取站点。区间列表缓存未命中时，以 startRegion、endRegion 条件调用 TrainStationRelationMapper.selectList，并通过 TrainMapper.selectById 加载车次资料，最后组装并按发车时间排序。
+- `dao/mapper/TrainStationRelationMapper.java` 继承 MyBatis-Plus BaseMapper，查询条件由 Service 的 Wrapper 构造；`dao/entity/TrainStationRelationDO.java` 映射 `t_train_station_relation`，包含 trainId、起终站、起终地区、始发/终到标识及出发/到达时间。
+- V1 查询还读取区间席别价格、Redis 余票并在缺失时调用 SeatMarginCacheLoader；本轮未追踪加载器和查询责任链实现。已读取的 V1 方法主体没有将 departureDate 放入区间 Mapper 的筛选条件，不能据此宣称原项目通过日期条件直接查出每日车次，也不能仅凭此断言全项目忽略日期。
+- 教学从 Controller 与请求 DTO 两个文件开始，再沿 V1 的区间 Mapper 调用解释 Service 和数据访问。精简版实际实现、字段及接口见下方“车次查询模块完成情况”；沿用全程票范围，库存扣减和订单留到后续模块。
+
+### 车次查询模块完成情况（最小闭环验收通过）
+
+- 用户亲手实现按出发日期、固定起点和终点查询预录入全程示例车次；代码位于 `src/main/java/com/mia/mini12306/train/`，集成测试为 `TrainTripIntegrationTests`。不需要登录，不查询或修改库存，不创建订单。
+- 用户在 IDEA 数据库控制台创建 `train_trips` 表并录入示例数据；对应脚本已保存在 `src/main/resources/db/train_trips.sql`。字段为有符号自增 BIGINT `id`、`VARCHAR(20) train_number`、两个 `VARCHAR(50)` 起终站、`DATETIME departure_at/arrival_at`。主键为 `id`；唯一约束 `(train_number, departure_at)`，查询索引 `(departure_station, arrival_station, departure_at)`，检查约束要求到达时间晚于出发时间。
+- SQL 脚本包含 2026-11-01 上海虹桥至杭州东两趟、同日上海虹桥至南京南一趟，以及 2026-11-02 上海虹桥至杭州东一趟。脚本用于首次初始化，当前 `CREATE TABLE` 和普通 `INSERT` 不支持对已有数据重复执行；本地数据库运行过一次后不要整份重跑。新环境先执行脚本再运行集成测试。
+- 接口为 `GET /api/trains?departureDate=yyyy-MM-dd&fromStation=...&toStation=...`。缺失/格式错误的查询参数及相同起终站返回 400；有效但无匹配车次返回 200 和空数组；正常结果按出发时间升序返回。无效参数的框架默认响应正文未统一为项目的 `message` 格式。
+- `TrainTripController` 绑定并校验请求 DTO，将实体转换为响应 DTO；`TrainTripService` 把 LocalDate 转成当天起点和次日零点；`TrainTripMapper` 用起终站相等条件及 `[dayStart, nextDayStart)` 半开时间范围查询，并通过 SQL 列别名映射实体。时间范围避免午夜边界重复归日，也允许发车时间范围利用索引。
+- 四项集成测试覆盖正常查询及排序、无匹配结果、错误日期格式、缺少起点、相同起终点。测试连接本地 MySQL，依赖已由 SQL 脚本录入的固定种子数据，不清理车次记录。
+- 2026-10-24 用户运行 `mvn "-Dtest=TrainTripIntegrationTests" test`：4 项通过，0 失败、0 错误、0 跳过；随后运行 `mvn test`：基础 2 项、乘车人 5 项、车次 4 项、登录 4 项、注册 4 项，共 19 项通过，0 失败、0 错误、0 跳过，BUILD SUCCESS。全量输出时间为 15:06:45 +08:00；对应 Surefire XML 报告于 15:06:38–15:06:45 生成。本轮由用户运行测试，助手未代跑。
+- 助手只读核对本模块源文件、SQL、测试和全量构建输出；未发现阻断本次查询闭环的问题。`git diff --check` 未报告空白错误（只有 AGENTS.md 的 LF/CRLF 提示）。本轮未执行数据库操作、构建、测试或 Git 写命令，也未提交或推送业务代码。
+- 2026-10-24 主对话只读验收通过，范围为本地学习阶段按出发日期和固定起终点查询全程示例车次。核对 Controller、Service、Mapper、请求与响应 DTO、异常、建表及示例数据脚本和四项测试，未发现阻断该最小闭环的问题；复核五份现有 Surefire XML：全量 19 项通过，0 失败、0 错误、0 跳过。最新 src 文件修改时间为当日 15:03:38，早于本轮报告。本次未代跑测试，未执行 SQL，也未连接数据库重新核验实际表结构。
+- 用户已重新暂存并提交完整的 9 个业务、测试和 SQL 文件，提交为 `f4ec8c3` — `feat: add train trip search by date and route`，尚未推送。此前暂存区为空壳或空 SQL 的问题已解决；助手没有更改暂存区。
+- 当前边界：未测试真实 HTTP 客户端或部署场景；无效参数响应体格式沿用框架默认值；初始化脚本不能重复应用；未接入数据库迁移工具。午夜边界、缺少日期或终点、空白站名尚无专项测试；排序测试的示例数据本身按时间插入，尚未专门构造乱序数据验证排序。库存、席别和订单流程不属于本模块。
+
 ## 当前停留点与交接规则
 
-- 当前阶段：注册（`e8f27d2`）与登录（`5ffa315` — `feat: add login, current user lookup and logout`）均已提交并推送。乘车人新增、列表、详情、修改及身份归属由用户亲自实现，2026-10-23 全量 15 项测试通过，主对话只读验收通过；用户已提交业务代码：`9423424` — `feat: add passenger management and account isolation`，尚未推送。
-- 2026-10-23 业务提交后只读检查：main 比本地 origin/main 引用领先 1 个提交，工作区仅有本文件修改。用户已重新暂存并提交完整的 12 个业务与测试文件，此前暂存区为空壳或旧版本的问题已解决。交接文档尚未提交，需由用户单独审阅并提交；本轮未刷新远程引用。
-- 当前停留点：下一步由用户拟写规范英文文档提交说明，亲自提交交接文档并推送，收尾后开启车次模块的新对话。此前数据库拒绝连接的具体环境原因未确认。
+- 当前阶段：注册（`e8f27d2`）、登录（`5ffa315`）及乘车人（`9423424` — `feat: add passenger management and account isolation`）均已提交并推送；乘车人最小闭环已由主对话验收。2026-10-24 车次查询实现完成，用户全量 19 项测试通过，主对话只读验收通过；业务提交 `f4ec8c3` 已完成、尚未推送，本轮交接文档尚未提交。
+- 2026-10-24 开始时只读检查：main 与本地 origin/main 均指向包含乘车人业务提交的文档提交，双方领先/落后计数均为 0，工作区干净。用户明确确认乘车人已推送；本轮未刷新远程引用。文档中“尚未推送”和文档尚待单独提交的旧停留点已纠正，这次纠正随车次模块后续文档更新一并由用户审阅、提交。
+- 当前停留点：2026-10-24 业务提交后只读检查，main 比本地 origin/main 引用领先 1 个提交，工作区仅有 AGENTS.md 修改。下一步由用户单独审阅并提交交接文档，再推送；提交说明先由用户拟写。Git 收尾后进入库存与创建订单模块；助手未代替用户暂存、提交或推送。
+- 此前乘车人业务提交 `9423424` 已由用户确认推送；文档中对应的过期“尚未推送”记录已纠正。AGENTS.md 的本轮更新仍未提交。
 - 助手本轮仅只读检查及维护本文件，未修改业务或测试文件，未执行构建、测试、容器或 Git 写操作。不主动创建或向其他对话发送任务。继续小步教学，后续示例代码添加简短英文注释，已有代码无需补注释；文档不维护自身提交编号，以免循环修改。
 - 主对话给模块对话的任务应包含：目标、已知前提、范围、需要讨论的决定，以及完成后的验证要求。
 - 模块对话结束时更新本文件：实际完成的功能、关键设计决定、验证命令及结果、已知问题、下一步；有业务提交时记录其编号。未验证或未推送的状态必须明确标注。
