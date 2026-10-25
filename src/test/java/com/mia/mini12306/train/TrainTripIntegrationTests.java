@@ -58,6 +58,8 @@ class TrainTripIntegrationTests {
                         .param("departureDate", "2026-11-01")
                         .param("fromStation", "上海虹桥")
                         .param("toStation", "上海虹桥"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                // Return the controlled business message.
+                .andExpect(jsonPath("$.message").value("起点和终点不能相同"));
     }
 }

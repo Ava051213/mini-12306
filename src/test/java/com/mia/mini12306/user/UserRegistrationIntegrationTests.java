@@ -82,7 +82,8 @@ class UserRegistrationIntegrationTests {
                 .contentType(APPLICATION_JSON)
                 .content(requestBody))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").exists());
+                // Do not echo the submitted username.
+                .andExpect(jsonPath("$.message").value("用户名已存在"));
     }
 
     @Test

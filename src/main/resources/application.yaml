@@ -7,3 +7,8 @@ spring:
     url: jdbc:mysql://localhost:3307/mini_12306?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
     username: root
     password: ${MYSQL_ROOT_PASSWORD}
+
+logging:
+  level:
+    org.springframework.web: INFO
+    org.springframework.web.servlet.PageNotFound: ERROR
