@@ -45,4 +45,3 @@ class Mini12306ApplicationTests {
         assertEquals(Long.valueOf(480), offsetMinutes);
     }
 }
-
