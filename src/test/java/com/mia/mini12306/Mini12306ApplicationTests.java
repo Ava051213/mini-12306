@@ -29,4 +29,20 @@ class Mini12306ApplicationTests {
         );
         assertEquals("mini_12306", database);
     }
+
+    @Test
+    void shouldUseBeijingTimeForDatabaseSession() {
+        // Verify the application's actual JDBC session.
+        Long offsetMinutes = jdbcTemplate.queryForObject(
+                """
+                SELECT TIMESTAMPDIFF(
+                    MINUTE, UTC_TIMESTAMP(), NOW()
+                    )
+                """,
+                Long.class
+                );
+
+        assertEquals(Long.valueOf(480), offsetMinutes);
+    }
 }
+
