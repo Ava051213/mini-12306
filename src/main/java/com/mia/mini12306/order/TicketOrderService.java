@@ -4,6 +4,8 @@ import com.mia.mini12306.inventory.InsufficientTicketsException;
 import com.mia.mini12306.inventory.TicketInventoryService;
 import com.mia.mini12306.inventory.mapper.TicketInventoryMapper;
 import com.mia.mini12306.order.dto.OrderCreateRequest;
+import com.mia.mini12306.order.dto.OrderPageResponse;
+import com.mia.mini12306.order.dto.OrderResponse;
 import com.mia.mini12306.order.mapper.TicketOrderMapper;
 import com.mia.mini12306.passenger.Passenger;
 import com.mia.mini12306.passenger.PassengerService;
@@ -70,8 +72,29 @@ public class TicketOrderService {
         return saved;
     }
 
-    public List<TicketOrder> findAll(Long userId) {
-        return ticketOrderMapper.findAllByUserId(userId);
+    public OrderPageResponse findPage(Long userId, int page, int size) {
+        // Use long arithmetic before multiplying.
+        long offset = ((long) page - 1) * size;
+
+        long total = ticketOrderMapper.countByUserId(userId);
+
+        // Map only the rows returned for this page.
+        List<OrderResponse> items = ticketOrderMapper
+                .findPageByUserId(userId, size, offset)
+                .stream()
+                .map(OrderResponse::from)
+                .toList();
+
+        // Round up without adding to the total.
+        long totalPages = total / size + (total % size == 0 ? 0 : 1);
+
+        return new OrderPageResponse(
+                items,
+                page,
+                size,
+                total,
+                totalPages
+        );
     }
 
     public TicketOrder findById(Long userId, Long id) {

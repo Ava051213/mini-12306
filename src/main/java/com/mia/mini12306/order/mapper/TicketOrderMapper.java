@@ -43,7 +43,15 @@ public interface TicketOrderMapper {
             @Param("userId") Long userId
     );
 
-    // Load only the current account's orders, newest first.
+    // Count only the current account's orders.
+    @Select("""
+            SELECT COUNT(*)
+            FROM ticket_orders
+            WHERE user_id = #{userId}
+            """)
+    long countByUserId(@Param("userId") Long userId);
+
+    // Apply pagination in the database with a fixed order.
     @Select("""
             SELECT id,
                    user_id AS userId,
@@ -57,8 +65,13 @@ public interface TicketOrderMapper {
             FROM ticket_orders
             WHERE user_id = #{userId}
             ORDER BY id DESC
+            LIMIT #{size} OFFSET #{offset}
             """)
-    List<TicketOrder> findAllByUserId(@Param("userId") Long userId);
+    List<TicketOrder> findPageByUserId(
+            @Param("userId") Long userId,
+            @Param("size") int size,
+            @Param("offset") long offset
+    );
 
     // Only an owned pending order may enter a terminal state.
     @Update("""

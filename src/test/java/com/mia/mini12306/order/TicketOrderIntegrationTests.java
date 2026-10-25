@@ -5,6 +5,7 @@ import com.mia.mini12306.inventory.TicketInventory;
 import com.mia.mini12306.inventory.mapper.TicketInventoryMapper;
 import com.mia.mini12306.order.dto.OrderCreateRequest;
 import com.mia.mini12306.order.dto.OrderCreateResponse;
+import com.mia.mini12306.order.dto.OrderPageResponse;
 import com.mia.mini12306.order.mapper.TicketOrderMapper;
 import com.mia.mini12306.passenger.dto.PassengerResponse;
 import com.mia.mini12306.passenger.dto.PassengerSaveRequest;
@@ -546,10 +547,14 @@ class TicketOrderIntegrationTests {
     void shouldQueryOwnOrdersNewestFirst() throws Exception {
         MockHttpSession session = registerAndLogin();
 
-        // A new account has no orders.
+        // A new account has an empty first page.
         mockMvc.perform(get("/api/orders").session(session))
                 .andExpect(status().isOk())
-                .andExpect(content().json("[]"));
+                .andExpect(jsonPath("$.items").isEmpty())
+                .andExpect(jsonPath("$.page").value(1))
+                .andExpect(jsonPath("$.size").value(10))
+                .andExpect(jsonPath("$.total").value(0))
+                .andExpect(jsonPath("$.totalPages").value(0));
 
         PassengerResponse passenger = createPassenger(
                 session,
@@ -586,21 +591,21 @@ class TicketOrderIntegrationTests {
 
         mockMvc.perform(get("/api/orders").session(session))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].id").value(second.id()))
-                .andExpect(jsonPath("$[1].id").value(first.id()))
-                .andExpect(jsonPath("$[0].trainTripId").value(tripId))
-                .andExpect(jsonPath("$[0].passengerId")
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.items[0].id").value(second.id()))
+                .andExpect(jsonPath("$.items[1].id").value(first.id()))
+                .andExpect(jsonPath("$.items[0].trainTripId").value(tripId))
+                .andExpect(jsonPath("$.items[0].passengerId")
                         .value(passenger.id()))
-                .andExpect(jsonPath("$[0].passengerName")
+                .andExpect(jsonPath("$.items[0].passengerName")
                         .value("Query Rider"))
-                .andExpect(jsonPath("$[0].status")
+                .andExpect(jsonPath("$.items[0].status")
                         .value("PENDING_PAYMENT"))
-                .andExpect(jsonPath("$[0].createdAt").exists())
-                .andExpect(jsonPath("$[0].updatedAt").exists())
-                .andExpect(jsonPath("$[*].userId").isEmpty())
-                .andExpect(jsonPath("$[*].passengerIdCard").isEmpty())
-                .andExpect(jsonPath("$[*].idCard").isEmpty());
+                .andExpect(jsonPath("$.items[0].createdAt").exists())
+                .andExpect(jsonPath("$.items[0].updatedAt").exists())
+                .andExpect(jsonPath("$.items[*].userId").isEmpty())
+                .andExpect(jsonPath("$.items[*].passengerIdCard").isEmpty())
+                .andExpect(jsonPath("$.items[*].idCard").isEmpty());
 
         // Query both IDs so equal user/order IDs cannot hide swapped arguments.
         for (OrderCreateResponse order :
@@ -688,19 +693,37 @@ class TicketOrderIntegrationTests {
             ORDER BY id
             """, tripId);
 
-        mockMvc.perform(get("/api/orders").session(ownerSession))
+        mockMvc.perform(get("/api/orders")
+                        .session(ownerSession)
+                        .param("page", "1")
+                        .param("size", "1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].id").value(second.id()))
-                .andExpect(jsonPath("$[1].id").value(first.id()));
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(second.id()))
+                .andExpect(jsonPath("$.total").value(2))
+                .andExpect(jsonPath("$.totalPages").value(2));
+
+        mockMvc.perform(get("/api/orders")
+                        .session(ownerSession)
+                        .param("page", "2")
+                        .param("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(first.id()))
+                .andExpect(jsonPath("$.total").value(2))
+                .andExpect(jsonPath("$.totalPages").value(2));
 
         // A supplied userId must not override the session identity.
         mockMvc.perform(get("/api/orders")
                         .session(otherSession)
+                        .param("page", "1")
+                        .param("size", "1")
                         .param("userId", ownerUserId.toString()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].id").value(other.id()));
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(other.id()))
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.totalPages").value(1));
 
         for (OrderCreateResponse order :
                 new OrderCreateResponse[]{first, second}) {
@@ -810,9 +833,9 @@ class TicketOrderIntegrationTests {
 
         mockMvc.perform(get("/api/orders").session(session))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].id").value(order.id()))
-                .andExpect(jsonPath("$[0].status").value("PAID"));
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(order.id()))
+                .andExpect(jsonPath("$.items[0].status").value("PAID"));
     }
 
     @Test
@@ -887,11 +910,11 @@ class TicketOrderIntegrationTests {
 
         mockMvc.perform(get("/api/orders").session(session))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].id").value(retained.id()))
-                .andExpect(jsonPath("$[0].status").value("PENDING_PAYMENT"))
-                .andExpect(jsonPath("$[1].id").value(target.id()))
-                .andExpect(jsonPath("$[1].status").value("CANCELLED"));
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.items[0].id").value(retained.id()))
+                .andExpect(jsonPath("$.items[0].status").value("PENDING_PAYMENT"))
+                .andExpect(jsonPath("$.items[1].id").value(target.id()))
+                .andExpect(jsonPath("$.items[1].status").value("CANCELLED"));
 
         mockMvc.perform(get("/api/trains/{id}/inventory", tripId))
                 .andExpect(status().isOk())
@@ -1504,6 +1527,117 @@ class TicketOrderIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.remainingTickets")
                         .value(expectedRemaining));
+    }
+
+    @Test
+    void shouldPaginateOrdersNewestFirst() throws Exception {
+        MockHttpSession session = registerAndLogin();
+        PassengerResponse passenger = createPassenger(
+                session,
+                new PassengerSaveRequest(
+                        "Page Rider",
+                        "00000000000000021X",
+                        "13800000021"
+                )
+        );
+
+        // Use isolated test data without changing existing orders.
+        Long tripId = createTrip();
+        createInventory(tripId, 3, 3);
+
+        OrderCreateResponse first =
+                createOrder(session, tripId, passenger.id());
+        OrderCreateResponse second =
+                createOrder(session, tripId, passenger.id());
+        OrderCreateResponse third =
+                createOrder(session, tripId, passenger.id());
+
+        assertTrue(third.id() > second.id());
+        assertTrue(second.id() > first.id());
+
+        // Check the first page, partial last page, and out-of-range page.
+        List<List<Long>> expectedPages = List.of(
+                List.of(third.id(), second.id()),
+                List.of(first.id()),
+                List.of()
+        );
+
+        for (int page = 1; page <= expectedPages.size(); page++) {
+            MvcResult result = mockMvc.perform(get("/api/orders")
+                            .session(session)
+                            .param("page", Integer.toString(page))
+                            .param("size", "2"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.page").value(page))
+                    .andExpect(jsonPath("$.size").value(2))
+                    .andExpect(jsonPath("$.total").value(3))
+                    .andExpect(jsonPath("$.totalPages").value(2))
+                    .andReturn();
+
+            OrderPageResponse response = objectMapper.readValue(
+                    result.getResponse().getContentAsByteArray(),
+                    OrderPageResponse.class
+            );
+
+            List<Long> actualIds = response.items().stream()
+                    .map(item -> item.id())
+                    .toList();
+
+            assertEquals(expectedPages.get(page - 1), actualIds);
+        }
+
+        // A large valid page must not overflow the offset calculation.
+        mockMvc.perform(get("/api/orders")
+                        .session(session)
+                        .param("page", Integer.toString(Integer.MAX_VALUE))
+                        .param("size", "100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isEmpty())
+                .andExpect(jsonPath("$.page").value(Integer.MAX_VALUE))
+                .andExpect(jsonPath("$.size").value(100))
+                .andExpect(jsonPath("$.total").value(3))
+                .andExpect(jsonPath("$.totalPages").value(1));
+
+        // Reading pages must not change orders or inventory.
+        assertInventoryAndOrderCount(tripId, 0, 3);
+    }
+
+    @Test
+    void shouldRejectInvalidPaginationParameters() throws Exception {
+        MockHttpSession session = registerAndLogin();
+
+        String[][] invalidParameters = {
+                {"page", "0"},
+                {"page", "-1"},
+                {"page", "1.5"},
+                {"page", "2147483648"},
+                {"page", "PRIVATE_PAGE_MARKER"},
+                {"size", "0"},
+                {"size", "-1"},
+                {"size", "101"},
+                {"size", "1.5"},
+                {"size", "2147483648"},
+                {"size", "PRIVATE_SIZE_MARKER"}
+        };
+
+        for (String[] parameter : invalidParameters) {
+            // Keep authentication valid to isolate parameter failures.
+            MvcResult result = mockMvc.perform(get("/api/orders")
+                            .session(session)
+                            .param(parameter[0], parameter[1]))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(content().contentTypeCompatibleWith(
+                            APPLICATION_JSON
+                    ))
+                    .andExpect(jsonPath("$.message").isString())
+                    .andExpect(jsonPath("$.message").isNotEmpty())
+                    .andReturn();
+
+            // Conversion errors must not echo submitted input.
+            String body = result.getResponse().getContentAsString();
+            assertFalse(body.contains("PRIVATE_PAGE_MARKER"));
+            assertFalse(body.contains("PRIVATE_SIZE_MARKER"));
+        }
     }
 
     private MockHttpSession registerAndLogin() throws Exception {

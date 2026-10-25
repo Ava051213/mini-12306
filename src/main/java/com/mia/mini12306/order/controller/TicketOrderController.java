@@ -4,15 +4,16 @@ import com.mia.mini12306.order.TicketOrder;
 import com.mia.mini12306.order.TicketOrderService;
 import com.mia.mini12306.order.dto.OrderCreateRequest;
 import com.mia.mini12306.order.dto.OrderCreateResponse;
+import com.mia.mini12306.order.dto.OrderPageResponse;
 import com.mia.mini12306.order.dto.OrderResponse;
 import com.mia.mini12306.user.CurrentUserSession;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -44,15 +45,19 @@ public class TicketOrderController {
     }
 
     @GetMapping
-    public List<OrderResponse> findAll(
+    public OrderPageResponse findPage(
+            @RequestParam(name = "page", defaultValue = "1")
+            @Min(1) int page,
+
+            @RequestParam(name = "size", defaultValue = "10")
+            @Min(1) @Max(100) int size,
+
             HttpServletRequest httpRequest
     ) {
-        // Always derive the owner from the authenticated session.
+        // Always derive ownership from the authenticated session.
         Long userId = currentUserSession.requireUser(httpRequest).id();
 
-        return ticketOrderService.findAll(userId).stream()
-                .map(OrderResponse::from)
-                .toList();
+        return ticketOrderService.findPage(userId, page, size);
     }
 
     @GetMapping("/{id}")
