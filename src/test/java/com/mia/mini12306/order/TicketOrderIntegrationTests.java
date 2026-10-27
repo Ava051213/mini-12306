@@ -1,7 +1,6 @@
 package com.mia.mini12306.order;
 
 import com.mia.mini12306.inventory.InsufficientTicketsException;
-import com.mia.mini12306.inventory.TicketInventory;
 import com.mia.mini12306.inventory.mapper.TicketInventoryMapper;
 import com.mia.mini12306.order.dto.OrderCreateRequest;
 import com.mia.mini12306.order.dto.OrderCreateResponse;
@@ -9,11 +8,11 @@ import com.mia.mini12306.order.dto.OrderPageResponse;
 import com.mia.mini12306.order.mapper.TicketOrderMapper;
 import com.mia.mini12306.passenger.dto.PassengerResponse;
 import com.mia.mini12306.passenger.dto.PassengerSaveRequest;
+import com.mia.mini12306.support.DatabaseIntegrationTest;
 import com.mia.mini12306.user.CurrentUserSession;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -37,9 +36,8 @@ import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest
 @AutoConfigureMockMvc
-class TicketOrderIntegrationTests {
+class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;

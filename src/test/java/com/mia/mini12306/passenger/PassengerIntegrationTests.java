@@ -2,13 +2,11 @@ package com.mia.mini12306.passenger;
 
 import com.mia.mini12306.passenger.dto.PassengerResponse;
 import com.mia.mini12306.passenger.dto.PassengerSaveRequest;
+import com.mia.mini12306.support.DatabaseIntegrationTest;
 import com.mia.mini12306.user.CurrentUserSession;
-import com.zaxxer.hikari.util.Credentials;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.ApplicationListener;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -22,9 +20,8 @@ import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest
 @AutoConfigureMockMvc
-public class PassengerIntegrationTests {
+public class PassengerIntegrationTests extends DatabaseIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;

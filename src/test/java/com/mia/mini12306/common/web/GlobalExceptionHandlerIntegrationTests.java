@@ -1,9 +1,9 @@
 package com.mia.mini12306.common.web;
 
+import com.mia.mini12306.support.DatabaseIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
@@ -19,11 +19,10 @@ import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest
 @AutoConfigureMockMvc
 @Import(GlobalExceptionHandlerIntegrationTests.TestConfig.class)
 @ExtendWith(OutputCaptureExtension.class)
-class GlobalExceptionHandlerIntegrationTests {
+class GlobalExceptionHandlerIntegrationTests extends DatabaseIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;

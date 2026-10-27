@@ -7,6 +7,16 @@ spring:
     url: jdbc:mysql://localhost:3307/mini_12306?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
     username: root
     password: ${MYSQL_ROOT_PASSWORD}
+  flyway:
+    # Enable migrations after database isolation is ready
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+    clean-disabled: true
+    validate-on-migrate: true
+  sql:
+    init:
+      mode: never
 
 logging:
   level:

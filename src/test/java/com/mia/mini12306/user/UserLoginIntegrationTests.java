@@ -1,11 +1,11 @@
 package com.mia.mini12306.user;
 
 
+import com.mia.mini12306.support.DatabaseIntegrationTest;
 import com.mia.mini12306.user.mapper.UserMapper;
 import jakarta.servlet.http.HttpSession;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
@@ -19,9 +19,8 @@ import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest
 @AutoConfigureMockMvc
-class UserLoginIntegrationTests {
+class UserLoginIntegrationTests extends DatabaseIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;

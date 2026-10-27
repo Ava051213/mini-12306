@@ -1,6 +1,6 @@
 package com.mia.mini12306.user;
 
-import org.assertj.core.api.Java6BDDSoftAssertionsProvider;
+import com.mia.mini12306.support.DatabaseIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jackson.JacksonComponentModule;
@@ -21,9 +21,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
 @AutoConfigureMockMvc
-class UserRegistrationIntegrationTests {
+class UserRegistrationIntegrationTests extends DatabaseIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
