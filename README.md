@@ -24,60 +24,81 @@
 - Spring Boot 4.0.8
 - MySQL 8.4（由 Compose 启动）
 
-## 首次初始化
+## 数据库与迁移
 
-### 1. 配置本地凭据
+### 本地凭据和 MySQL
 
-在项目根目录创建 `.env`，填写自己的本地数据库密码：
+在项目根目录创建 `.env`，填写自己的本地凭据：
 
 ```properties
-MYSQL_ROOT_PASSWORD=replace_with_your_local_password
+MYSQL_ROOT_PASSWORD=replace_with_your_local_root_password
+MYSQL_TEST_PASSWORD=replace_with_a_different_test_account_password
 ```
 
-`.env` 已被 Git 忽略，不应提交真实密码。
-Docker Compose 和 Spring Boot 分别读取此文件。
+`.env` 已被 Git 忽略，不要提交真实密码。Compose 使用 root 凭据启动
+MySQL；Spring Boot 默认配置也使用 root 连接开发库。测试使用单独账号，
+密码通过 `MYSQL_TEST_PASSWORD` 提供。不要将本地凭据用于生产环境。
 
-### 2. 启动数据库
+启动数据库并等待 MySQL 日志出现 `ready for connections`：
 
 ```powershell
 docker compose up -d
 docker compose logs --tail 30 mysql
 ```
 
-等待 MySQL 日志出现 `ready for connections`。
-
-数据库名为 `mini_12306`，本机端口为 `3307`，容器端口为 `3306`。
+Compose 创建开发库 `mini_12306`。本机端口为 `3307`，容器端口为 `3306`，
 数据保存在命名卷 `mysql_data` 中。
 
-### 3. 初始化表与示例数据
+### 开发库 Schema
 
-以下脚本只在空库首次执行，不能在已初始化的库中整份重跑。
+应用默认连接 `mini_12306`，启动时 Flyway 会校验迁移历史并执行尚未应用的
+正式迁移。正式迁移放在 `src/main/resources/db/migration`，使用类似
+`V1__create_initial_schema.sql` 的命名方式。V1 创建五张业务表，不插入
+示例车次或余票。Flyway Schema History 另有一张管理表。
 
-```powershell
-docker compose cp ./src/main/resources/db mysql:/tmp/mini-12306-db
+全新空库可以直接启动应用，Flyway 会执行 V1 创建表。已有数据库不能直接
+重放建表 SQL：先备份，再将实际表结构与目标版本迁移逐项核对；一致后才可
+显式执行 Flyway `baseline` 登记当前版本。Baseline 只写迁移历史，不会验证
+或创建业务结构，也不会运行被登记版本的 SQL。结构不一致时先停止，不能
+用 baseline 掩盖差异。`baseline-on-migrate` 保持关闭，`clean` 被禁用。
 
-docker compose exec mysql mysql --default-character-set=utf8mb4 -uroot -p mini_12306
-```
+本项目开发库已经由维护者核对结构、备份并显式 baseline 到版本 1。后续
+正式 Schema 变更应新增迁移文件，不修改已执行的 V1，也不要再手动运行
+`src/main/resources/db` 中的旧 `SOURCE` 脚本。测试专用迁移使用了版本 2，
+共享正式迁移后续从版本 3 起，并保证所有迁移目录中的版本唯一。
 
-输入 `.env` 中配置的密码，在 MySQL 命令行执行：
+旧的 `src/main/resources/db/*.sql` 手动初始化脚本暂留作历史参考；Spring
+SQL 初始化器已关闭，应用启动不会执行它们。它们包含建表语句，不适合在
+已有库中重复运行。全新开发库目前只通过 V1 创建结构，不会自动获得示例车次。
+
+### 独立测试库
+
+测试连接 `mini_12306_test`，使用 MySQL 用户 `mini12306_test`。首次准备测试
+环境时，使用 DBA/root 在 MySQL 中执行以下语句；将密码替换为与 root 不同的
+本地测试密码，并将同一密码写入 `.env` 的 `MYSQL_TEST_PASSWORD`：
 
 ```sql
-SELECT DATABASE();
+CREATE DATABASE mini_12306_test
+    CHARACTER SET utf8mb4
+    COLLATE utf8mb4_0900_ai_ci;
 
-SOURCE /tmp/mini-12306-db/users.sql;
-SOURCE /tmp/mini-12306-db/passengers.sql;
-SOURCE /tmp/mini-12306-db/train_trips.sql;
-SOURCE /tmp/mini-12306-db/ticket_inventory.sql;
-SOURCE /tmp/mini-12306-db/ticket_orders.sql;
+CREATE USER 'mini12306_test'@'%'
+    IDENTIFIED BY 'replace_with_a_different_test_account_password';
 
-SHOW TABLES;
-exit
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES
+    ON `mini\_12306\_test`.*
+    TO 'mini12306_test'@'%';
 ```
 
-确认当前数据库为 `mini_12306` 后再执行脚本，任一步报错先停止处理。
+该账号只应获得测试库权限，不授予开发库或生产库权限。测试配置位于
+`src/test/resources/application-test.yaml`，测试基类固定激活 `test` profile。
+启动迁移前，测试安全配置会校验生效 URL、MySQL 用户和实际连接的数据库，
+配置不匹配时阻止启动。
 
-初始化后应有五张表、四条示例车次及四条库存记录，
-每趟车初始余票为 20；用户、乘车人和订单表为空。
+测试 profile 加载正式迁移和 `src/test/resources/db/test-migration` 中的
+测试专用迁移。V1 创建五张业务表，测试 V2 插入四条固定参考车次及其库存；
+开发 profile 不加载该测试目录。测试库另外有 `flyway_schema_history` 表，
+因此完整初始化后有五张业务表和一张 Flyway 管理表。
 
 ## 启动应用
 
@@ -125,14 +146,21 @@ curl.exe -i http://localhost:8080/api/users/me
 
 ## 测试
 
-先完成数据库初始化，并保持 MySQL 运行，再执行：
+保持本地 MySQL 运行，在项目根目录执行：
 
 ```powershell
 mvn test
 ```
 
-测试连接本地 `mini_12306` 数据库，连通性测试会断言数据库名称。
-部分集成测试保留随机生成的数据，不应对生产数据库运行。
+测试通过 `test` profile 连接本地 `mini_12306_test`，使用
+`MYSQL_TEST_PASSWORD` 和受限账号。执行前检查 `.env` 已配置该密码，
+且 MySQL 测试库与用户已按上文创建。
+
+测试启动会核实预期数据源配置和实际数据库/用户；不匹配时在迁移前阻止
+应用上下文启动。测试会检查 Flyway 版本历史、六张表以及订单列表索引。
+集成测试会创建随机账号、乘车人、车次、库存和订单，部分数据会保留；
+测试专用 V2 只在首次迁移时插入固定参考车次和初始库存，不会每次运行时
+重置库存。
 
 覆盖账号隔离、订单状态转换、库存回滚及固定并发场景，
 以及订单分页、越界空页、分页参数校验和账号总量隔离。
