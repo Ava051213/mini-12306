@@ -6,6 +6,7 @@ import com.mia.mini12306.order.IdempotencyKeyConflictException;
 import com.mia.mini12306.order.OrderNotFoundException;
 import com.mia.mini12306.order.OrderStateConflictException;
 import com.mia.mini12306.passenger.PassengerAlreadyExistsException;
+import com.mia.mini12306.passenger.PassengerInUseException;
 import com.mia.mini12306.passenger.PassengerNotFoundException;
 import com.mia.mini12306.train.InvalidTrainTripSearchException;
 import com.mia.mini12306.user.InvalidCredentialsException;
@@ -61,6 +62,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler({
             PassengerAlreadyExistsException.class,
+            PassengerInUseException.class,
             InsufficientTicketsException.class,
             OrderStateConflictException.class,
             IdempotencyKeyConflictException.class

@@ -72,4 +72,14 @@ public class PassengerController {
                 passengerService.update(userId, id, request)
         );
     }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(
+            @PathVariable Long id,
+            HttpServletRequest httpRequest
+    ) {
+        Long userId = currentUserSession.requireUser(httpRequest).id();
+        passengerService.delete(userId, id);
+    }
 }

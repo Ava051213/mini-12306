@@ -2,8 +2,10 @@ package com.mia.mini12306.passenger;
 
 import com.mia.mini12306.passenger.dto.PassengerSaveRequest;
 import com.mia.mini12306.passenger.mapper.PassengerMapper;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Locale;
@@ -54,6 +56,27 @@ public class PassengerService {
         }
 
         return findById(userId, passengerId);
+    }
+
+    @Transactional
+    public void delete(Long userId, Long passengerId) {
+        // Check ownership first so foreign records look exactly like missing ones.
+        findById(userId, passengerId);
+
+        // Orders keep their own snapshot, but still reference this row.
+        if(passengerMapper.countOrdersByPassengerId(passengerId) > 0) {
+            throw new PassengerInUseException();
+        }
+
+        try {
+            // The owner condition makes foreign rows impossible to delete.
+            if(passengerMapper.deleteByIdAndUserId(passengerId, userId) != 1) {
+                throw new PassengerNotFoundException();
+            }
+        } catch(DataIntegrityViolationException exception) {
+            // A concurrent order may appear after the check; the foreign key blocks it.
+            throw new PassengerInUseException();
+        }
     }
 
     private Passenger fromRequest(

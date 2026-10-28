@@ -47,4 +47,21 @@ public interface PassengerMapper {
               AND user_id = #{userId}
             """)
     int update(Passenger passenger);
+
+    @Select("""
+            SELECT COUNT(*)
+            FROM ticket_orders
+            WHERE passenger_id = #{passengerId}
+            """)
+    long countOrdersByPassengerId(@Param("passengerId") Long passengerId);
+
+    @Delete("""
+            DELETE FROM passengers
+            WHERE id = #{id}
+              AND user_id = #{userId}
+            """)
+    int deleteByIdAndUserId(
+            @Param("id") Long id,
+            @Param("userId") Long userId
+    );
 }
