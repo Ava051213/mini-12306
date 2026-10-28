@@ -193,6 +193,7 @@ class GlobalExceptionHandlerIntegrationTests extends DatabaseIntegrationTest {
 
         // An empty JSON object leaves both required IDs missing.
         mockMvc.perform(post("/api/orders")
+                        .header("Idempotency-Key", "test-key")
                         .contentType(APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest())

@@ -350,11 +350,28 @@
 
 ## 当前停留点与交接规则
 
-- 当前阶段：第一版业务模块和第二阶段前三模块均已完成主要实现与验证。第三模块“独立测试库与数据库版本迁移（Flyway）”的代码与配置已由用户提交为 `0bf3faf`（`feat: isolate test database and manage schema with Flyway`）；README 与 AGENTS 已按当前配置更新。第四模块“下单幂等”尚未开始，后续由主对话按既定路线安排。开发库 `mini_12306` 已显式 baseline 到版本 1，应用默认配置已开启 Flyway；测试库使用独立 `mini12306_test` 账号和 `mini_12306_test` 库。
+- 当前阶段：第一版业务模块及第二阶段前四模块已完成本地学习范围实现与验证。第三模块代码与文档已提交为 `0bf3faf`、`e427939`；第四模块“下单幂等”于 2026-10-28 完成独立测试库 V3 和全量 60 项回归，尚未提交/推送。开发库此前显式 baseline 到版本 1，本轮尚无开发库执行 V3 的证据；测试使用受限账号 `mini12306_test` 和独立库 `mini_12306_test`。
 - 2026-10-24 库存模块开始时只读检查：`main` 与本地 `origin/main` 指向相同提交，工作区干净，车次业务提交包含完整的 9 个源码、测试和 SQL 文件；用户确认车次模块已完成 Git 收尾。本轮未刷新远程引用，未重新执行测试。
-- 当前停留点：第二模块 `14410a1` 已由用户提交推送；第三模块代码提交为 `0bf3faf`，README 与 AGENTS 分开维护。当前 `main` 本地比 `origin/main` 超前两个提交，尚未推送。开发库的备份位于用户目录 `C:\Users\34248\mini12306-backups\20261027_132508\mini_12306_before_flyway.sql`，大小 234709 字节且有 mysqldump 完成标记；尚未演练恢复。开发库 baseline 操作前计数为 users=574、passengers=505、trips=377、inventory=352、orders=396、remaining tickets 总和=706；操作后用户查询确认相同，`flyway_schema_history` 只有 version=1、description=`<< Flyway Baseline >>`、type=BASELINE、checksum 空、success=1。用户运行 `mvn spring-boot:run` 的日志确认连到 `mini_12306`、Flyway 校验成功、当前版本 1、无待执行迁移，Tomcat 8080 启动成功；MySQL 8.4 高于 Flyway 已验证版本 8.1 的警告仍存在。用户是否已按 Ctrl+C 停止该进程未确认。
+- 当前停留点：第四模块本地验收通过，用户运行 `mvn test` 于 2026-10-28 11:39:06 完成，60 项全部通过；业务契约、并发、失败回滚、迁移和边界见下节。下一步主对话只读验收及用户 Git 收尾，不要求重复执行购票流程。历史环境与 Git 起点记录：2026-10-27 本轮开始时只读核对 `main` 与本地 `origin/main` 均为 `e427939`，工作区与暂存区干净；当前五个新增文件均为 AM，暂存区仍是初始骨架（V3 为空），完整内容在工作区，未替用户调整暂存。助手仅按授权维护 README 与本文件，文档修改未暂存；业务、配置、测试、数据库与 Git 写操作仍由用户负责。开发库的备份位于用户目录 `C:\Users\34248\mini12306-backups\20261027_132508\mini_12306_before_flyway.sql`，大小 234709 字节且有 mysqldump 完成标记；尚未演练恢复。开发库 baseline 操作前计数为 users=574、passengers=505、trips=377、inventory=352、orders=396、remaining tickets 总和=706；操作后用户查询确认相同，`flyway_schema_history` 只有 version=1、description=`<< Flyway Baseline >>`、type=BASELINE、checksum 空、success=1。用户运行 `mvn spring-boot:run` 的日志确认连到 `mini_12306`、Flyway 校验成功、当前版本 1、无待执行迁移，Tomcat 8080 启动成功；MySQL 8.4 高于 Flyway 已验证版本 8.1 的警告仍存在。用户是否已按 Ctrl+C 停止该进程未确认。
 - 第二阶段路线已于 2026-10-25 经用户确认，按五个边界明确的模块推进：第一，统一错误响应与参数校验日志脱敏；第二，订单列表分页与索引分析；第三，独立测试库与数据库版本迁移（Flyway）；第四，下单幂等；第五，支付超时关单。小件穿插：乘车人删除、历史时间迁移评估。浏览器前端与部署作为后续可选方向，接入时同步处理 CSRF、Cookie 和环境配置；继续保持单体，按具体问题决定是否增加组件。
 - 第一、二模块完成情况分别见对应章节。第三模块决定与验证记录见下节。README 与本文件由助手根据实际配置和验证结果维护；当前 README 已更新 Flyway、测试数据库准备、迁移和测试数据保留说明。第三模块代码与文档提交分开；后续模块对话开始前须检查暂存区、工作区和完整差异，保留既有提交，不做 Git 写操作。
+
+### 下单幂等（本地学习范围验收通过，未提交/推送）
+
+- 最终结果：用户运行 `mvn test`，于 **2026-10-28 11:39:06 +08:00** 完成，基础 5、注册 4、登录 4、乘车人 5、车次 4、库存 4、订单 28、错误响应 6，共 **60 项通过，0 失败、0 错误、0 跳过，BUILD SUCCESS**。助手核对用户输出与八份 Surefire XML 一致，报告时间 11:38:37–11:39:06；最新 src 修改为 11:23:01，按文件时间未发现报告生成后修改。日志和测试安全配置确认使用 `test` profile、受限账号 `mini12306_test` 与独立库 `mini_12306_test`，Flyway 版本 3 校验成功。此前仅执行 `mvn` 因未指定目标退出，未运行测试；后续完整命令已通过。
+- 用户于 2026-10-27 确认并亲手实现契约：`POST /api/orders` 必须携带 `Idempotency-Key` 请求头，1–64 位 ASCII 字母、数字、下划线或连字符，区分大小写，不裁剪；缺失或格式不符返回 400。请求体仍为 trainTripId/passengerId，账号仅来自 HttpSession。键限定在当前账号与创建订单操作内；不同账号同键隔离，不同键表示独立下单意图。
+- 同账号同键且两个请求 ID 相同，首次创建返回 201，重复返回 200 和原订单及查询时状态；原单已支付或取消也不重新创建，取消不释放键。成功键的任一请求 ID 不同返回 409“幂等键已用于不同的下单请求”，不回显参数或键。
+- 只保留成功创建的映射。业务校验、售罄或事务写入异常时，幂等占位、订单和库存一起回滚，同键可以重试，失败键不绑定参数。客户端改变下单意图时仍应换新键。成功映射与订单长期保留，暂无清理策略、删除订单或过期复用机制；保持单体 MySQL，不引入 Redis、消息队列或第三方幂等库。
+- 调用链：Controller 校验请求头/请求体并从 CurrentUserSession 读取账号；Service.create 在一个 Spring 事务内调用 OrderIdempotencyMapper.reserve，以无副作用 UPSERT 竞争唯一键，再通过 findForUpdate 锁定读取；先比较原始参数，已关联则锁定读取所属订单并直接返回，否则验证乘车人归属、查询并条件扣减库存、插入并读取订单，最后 attachOrder。占位不能单独提交；OrderCreateResult 的 created 区分 HTTP 201/200。同键请求等待前一事务提交或回滚，只有实际创建方扣票。
+- 正式迁移为 `src/main/resources/db/migration/V3__create_order_idempotency.sql`，未修改已执行 V1 或测试 V2。新表 `order_idempotency` 使用联合主键 `(user_id, idempotency_key)`，键为 ASCII/`ascii_bin`，保存原始请求 ID；可空 order_id 带唯一索引，账号和订单有外键。测试库主迁移与测试迁移合并按 V1/V2/V3 执行，基础测试验证成功版本 1/2/3 及七张表。开发库此前 baseline 到 1，后续只加载正式 V3；目前无开发库执行 V3 的证据。`application-test.yaml` 仅在 `src/test/resources` 且已跟踪，当前不存在旧主资源配置的暂存/未跟踪冲突。
+- 测试复用 registerAndLogin、createPassenger、createTrip、createInventory 等辅助方法，新增 submitOrder 与 assertIdempotencyMapping；新用例使用独立随机账号、2099 年车次和库存，不修改 V2 固定参考数据。三项基本专项覆盖首次/同参重试、分别改变两个 ID 的冲突、不同键独立创建、售罄后返回原单、跨账号同键隔离、乘车人校验/售罄失败无映射、取消后旧键返回 CANCELLED，以及失败键恢复库存后成功重试。
+- 同键并发专项使用 8 线程、同账号/同键/同请求争抢最后一张票，各线程独立调用真实 Service 代理事务；全部返回同一订单，恰一项 created=true，最终库存 0/订单 1/映射唯一，spy 验证扣库存与插订单各一次，再经 HTTP 重试返回 200。使用 ready/start 门闩、有期限的 Future 与 finally 关闭线程池，无测试层事务；原不同键争抢库存测试保留。
+- 请求头专项覆盖缺失、空串、空白、前后空格、非法字符、中文、65 位输入均返回安全 400 且无库存/订单/映射写入；1 位、64 位及 A/a 不同键成功，重复返回同一订单，并验证已支付后旧键返回 PAID。写异常专项在真实扣库存及 SqlSessionTemplate 执行真实 INSERT 后抛模拟 DataIntegrityViolationException，在事务外核对库存恢复、订单和占位均无残留，再用同一键成功创建与重复返回原单。
+- 定向验证：`mvn "-Dtest=Mini12306ApplicationTests,GlobalExceptionHandlerIntegrationTests,TicketOrderIntegrationTests" test` 于 01:19:09 为 37 项/1 失败，基础 5 与订单 26 通过；请求头 @Pattern 使空请求体校验进入 HandlerMethodValidationException，原受控字段提示回归失败。用户补齐 handleHandlerMethodValidationException，复用安全字段消息，直接参数仍通用 400、返回值校验保留安全 500；`mvn "-Dtest=GlobalExceptionHandlerIntegrationTests" test` 于 01:43:52 为 6 项全通过。日志中的受控 IllegalStateException ERROR 来自已有模拟 500 测试。
+- `mvn "-Dtest=TicketOrderIntegrationTests#shouldCreateOnlyOneOrderForConcurrentSameKey" test` 于 01:54:24 为 1 项通过；`mvn "-Dtest=TicketOrderIntegrationTests#shouldValidateIdempotencyKeyHeader+shouldRollBackInventoryWhenOrderInsertFails" test` 于 11:24:06 为 2 项全通过。后一命令此前因 Mockito 括号错误在模拟设置阶段失败，用户修正为 `.when(ticketOrderMapper).insert(...)`，并把首次调用的新随机键改为同一个 key；后续定向及全量均通过。
+- 最终只读核验覆盖 Controller/DTO、Service 事务、Mapper SQL、迁移、错误映射、测试及配置，未发现阻断本地学习范围的问题。验证边界：8 线程固定场景不等于压力测试或穷尽并发调度；写异常为真实写入后模拟运行时故障，不是实际数据库约束/网络故障；本轮没有重新运行真实 HTTP 购票演示，也没有在全新空库重放 V1/V2/V3。成功键长期占用，测试随机业务记录保留；开发库 V3 和 Git 收尾未完成。
+- 最终 Git 状态：本地 main 与 origin/main 均为 `e427939`，未刷新远程引用；第三模块代码 `0bf3faf` 及文档已提交，不能沿用本轮最初“第三模块仍未提交”的前提。第四模块共 13 个变更文件；五个新增文件仍为 AM，暂存区只有四个 Java 骨架共 16 行和空 V3，完整实现在工作区。其余业务/测试/README/本文件为未暂存修改。`git diff --cached --check` 无空白错误；`git diff --check` 发现 OrderIdempotencyMapper.java 第 36 行行尾空格，留给用户 Git 收尾时处理，助手未改源码或已执行迁移。助手仅维护两份文档，未代跑构建/测试/数据库/容器或执行 Git 写操作。
+- 交接给主对话：第四模块功能及独立测试库全量 60 项验证完成，正式迁移 V3，开发库执行尚未确认，成功映射无限期保留；当前工作区与暂存区不同步，提交推送由用户操作。主对话可据此只读验收并协调第五模块“支付超时关单”，本模块不提前实现。
 
 ### 独立测试库与数据库版本迁移（Flyway，代码已提交，文档已更新）
 
@@ -364,7 +381,7 @@
 - 测试库 Flyway 配置关闭 baseline-on-migrate、禁用 clean、启用 validate；测试 V1 在空库执行成功，再执行 V2 插入固定参考数据。重复启动时停在版本 2，没有重放 V2 或重置库存。自动化测试检查版本 1/2 均有成功历史记录且无失败记录、实际六张表清单，以及 `ticket_orders` 联合索引列顺序 `(user_id, id)`。
 - 开发库既有五表结构经用户提供的 SHOW CREATE TABLE 输出与 V1 对照一致。执行 baseline 前用户确认 schema 为 `mini_12306`；备份开发库到仓库外个人目录。使用 Flyway Maven Plugin 11.14.1 对明确指定的开发库执行显式 baseline version 1，未运行 V1 建表或测试 V2。baseline 后用户核对迁移历史为一条 BASELINE version 1；操作前后业务记录计数和库存总余量一致。正常配置下 `mvn spring-boot:run` 再次校验迁移并显示开发库版本 1 up to date。
 - 用户验证：`mvn "-Dtest=Mini12306ApplicationTests" test` 最新 5 项通过；此前 `mvn "-Dtest=TrainTripIntegrationTests" test` 4 项通过，确认 V2 数据可支撑固定车次查询；最新 `mvn test` 全量 55 项通过，0 失败、0 错误、0 跳过，BUILD SUCCESS。全量日志显示 test profile 连接 `mini_12306_test`，Flyway 版本 2 已是最新。README 已根据当前配置更新，未为文档编辑重跑测试。
-- 范围及未覆盖：测试账号在数据库层没有开发库权限；固定测试参考数据由不可变 V2 提供，其他集成测试创建的随机业务数据会保留。备份已导出但没有在隔离库进行恢复演练；没有重新连接核对所有开发库业务记录内容，基线前后仅对比表记录数及余票总和。自动结构断言仅覆盖表清单与订单索引，非全部字段/外键/CHECK 的自动比对；Flyway validate 也不全面检测实际表结构漂移。正式目录后续迁移须避开已被测试迁移占用的版本 2，采用全局不重复版本（例如 3），不可在两目录添加相同版本。代码已由用户提交为 `0bf3faf`，文档与代码分开提交；当前本地分支有两个尚未推送的模块提交。
+- 范围及未覆盖：测试账号在数据库层没有开发库权限；固定测试参考数据由不可变 V2 提供，其他集成测试创建的随机业务数据会保留。备份已导出但没有在隔离库进行恢复演练；没有重新连接核对所有开发库业务记录内容，基线前后仅对比表记录数及余票总和。自动结构断言仅覆盖表清单与订单索引，非全部字段/外键/CHECK 的自动比对；Flyway validate 也不全面检测实际表结构漂移。正式目录后续迁移须避开已被测试迁移占用的版本 2，采用全局不重复版本（例如 3），不可在两目录添加相同版本。代码提交为 `0bf3faf`，文档与代码分开提交；第四模块开始时曾核对本地超前两个提交，随后复查本地 `main` 与 `origin/main` 均为 `e427939`，未刷新远程引用。
 
 ### 订单列表分页与索引分析（主对话只读验收通过，已推送）
 

@@ -56,7 +56,7 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
             ORDER BY installed_rank
             """, String.class);
 
-        assertEquals(List.of("1", "2"), versions);
+        assertEquals(List.of("1", "2", "3"), versions);
 
         Long failedCount = jdbcTemplate.queryForObject("""
             SELECT COUNT(*)
@@ -80,6 +80,7 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
 
         assertEquals(List.of(
                 "flyway_schema_history",
+                "order_idempotency",
                 "passengers",
                 "ticket_inventory",
                 "ticket_orders",

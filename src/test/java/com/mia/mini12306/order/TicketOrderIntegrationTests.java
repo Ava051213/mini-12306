@@ -61,6 +61,453 @@ class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
     private SqlSessionTemplate sqlSessionTemplate;
 
     @Test
+    void shouldRespectIdempotencyKeyAndRequestParameters() throws Exception {
+        MockHttpSession session = registerAndLogin();
+
+        PassengerResponse passenger = createPassenger(
+                session,
+                new PassengerSaveRequest(
+                        "Idempotent Rider",
+                        "00000000000000021X",
+                        "13800000021"
+                )
+        );
+
+        Long tripId = createTrip();
+        createInventory(tripId, 2, 2);
+
+        String key = UUID.randomUUID().toString();
+        OrderCreateRequest request =
+                new OrderCreateRequest(tripId, passenger.id());
+
+        // The first request creates one order and consumes one ticket.
+        OrderCreateResponse first = submitOrder(
+                session, key, request, 201
+        );
+
+        assertNotNull(first.id());
+        assertEquals(tripId, first.trainTripId());
+        assertEquals(passenger.id(), first.passengerId());
+        assertEquals(OrderStatus.PENDING_PAYMENT, first.status());
+        assertInventoryAndOrderCount(tripId, 1, 1);
+
+        // Repeating the same intent returns the original order.
+        OrderCreateResponse repeated = submitOrder(
+                session, key, request, 200
+        );
+
+        assertEquals(first, repeated);
+        assertInventoryAndOrderCount(tripId, 1, 1);
+
+        // Either changed ID must conflict before business validation.
+        OrderCreateRequest[] conflictingRequests = {
+                new OrderCreateRequest(Long.MAX_VALUE, passenger.id()),
+                new OrderCreateRequest(tripId, Long.MAX_VALUE)
+        };
+
+        for (OrderCreateRequest conflicting : conflictingRequests) {
+            mockMvc.perform(post("/api/orders")
+                            .header("Idempotency-Key", key)
+                            .session(session)
+                            .contentType(APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(conflicting)))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.message")
+                            .value("幂等键已用于不同的下单请求"));
+
+            assertInventoryAndOrderCount(tripId, 1, 1);
+        }
+
+        // A different key represents an independent purchase.
+        OrderCreateResponse second = submitOrder(
+                session, UUID.randomUUID().toString(), request, 201
+        );
+
+        assertNotEquals(first.id(), second.id());
+        assertInventoryAndOrderCount(tripId, 0, 2);
+
+        // Even when sold out, the original key still returns its order.
+        OrderCreateResponse afterSoldOut = submitOrder(
+                session, key, request, 200
+        );
+
+        assertEquals(first, afterSoldOut);
+        assertInventoryAndOrderCount(tripId, 0, 2);
+    }
+
+    @Test
+    void shouldScopeIdempotencyKeyToAccount() throws Exception {
+        MockHttpSession firstSession = registerAndLogin();
+        MockHttpSession secondSession = registerAndLogin();
+
+        Long firstUserId = (Long) firstSession.getAttribute(
+                CurrentUserSession.LOGIN_USER_ID
+        );
+        Long secondUserId = (Long) secondSession.getAttribute(
+                CurrentUserSession.LOGIN_USER_ID
+        );
+        assertNotNull(firstUserId);
+        assertNotNull(secondUserId);
+        assertNotEquals(firstUserId, secondUserId);
+
+        PassengerResponse firstPassenger = createPassenger(
+                firstSession,
+                new PassengerSaveRequest(
+                        "First Rider", "00000000000000022X", "13800000022"
+                )
+        );
+        PassengerResponse secondPassenger = createPassenger(
+                secondSession,
+                new PassengerSaveRequest(
+                        "Second Rider", "00000000000000023X", "13800000023"
+                )
+        );
+
+        Long tripId = createTrip();
+        createInventory(tripId, 2, 2);
+        String key = UUID.randomUUID().toString();
+
+        OrderCreateRequest firstRequest =
+                new OrderCreateRequest(tripId, firstPassenger.id());
+        OrderCreateRequest secondRequest =
+                new OrderCreateRequest(tripId, secondPassenger.id());
+
+        // The same key belongs to two independent account scopes.
+        OrderCreateResponse first = submitOrder(
+                firstSession, key, firstRequest, 201
+        );
+        OrderCreateResponse second = submitOrder(
+                secondSession, key, secondRequest, 201
+        );
+
+        assertNotEquals(first.id(), second.id());
+        assertInventoryAndOrderCount(tripId, 0, 2);
+
+        // Each account must receive its own original order.
+        assertEquals(first, submitOrder(firstSession, key, firstRequest, 200));
+        assertEquals(second, submitOrder(secondSession, key, secondRequest, 200));
+
+        assertIdempotencyMapping(firstUserId, key, first.id());
+        assertIdempotencyMapping(secondUserId, key, second.id());
+        assertInventoryAndOrderCount(tripId, 0, 2);
+    }
+
+    @Test
+    void shouldAllowRetryAfterFailedCreation() throws Exception {
+        MockHttpSession session = registerAndLogin();
+        Long userId = (Long) session.getAttribute(
+                CurrentUserSession.LOGIN_USER_ID
+        );
+        assertNotNull(userId);
+
+        PassengerResponse passenger = createPassenger(
+                session,
+                new PassengerSaveRequest(
+                        "Retry Rider", "00000000000000024X", "13800000024"
+                )
+        );
+
+        Long tripId = createTrip();
+        createInventory(tripId, 1, 1);
+
+        OrderCreateRequest request =
+                new OrderCreateRequest(tripId, passenger.id());
+        String occupiedKey = UUID.randomUUID().toString();
+        String retryKey = UUID.randomUUID().toString();
+
+        // Occupy the only ticket through the normal order flow.
+        OrderCreateResponse occupied = submitOrder(
+                session, occupiedKey, request, 201
+        );
+        assertInventoryAndOrderCount(tripId, 0, 1);
+
+        // Business validation failure must roll back the placeholder.
+        mockMvc.perform(post("/api/orders")
+                        .header("Idempotency-Key", retryKey)
+                        .session(session)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new OrderCreateRequest(tripId, Long.MAX_VALUE)
+                        )))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("乘车人不存在"));
+
+        assertIdempotencyMapping(userId, retryKey, null);
+        assertInventoryAndOrderCount(tripId, 0, 1);
+
+        // The same key is still usable, but stock is currently unavailable.
+        mockMvc.perform(post("/api/orders")
+                        .header("Idempotency-Key", retryKey)
+                        .session(session)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("余票不足"));
+
+        assertIdempotencyMapping(userId, retryKey, null);
+        assertInventoryAndOrderCount(tripId, 0, 1);
+
+        // Restore the ticket through cancellation, without editing stock directly.
+        mockMvc.perform(post("/api/orders/{id}/cancel", occupied.id())
+                        .session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+
+        assertInventoryAndOrderCount(tripId, 1, 1);
+
+        // Cancellation keeps the old key bound to the cancelled order.
+        OrderCreateResponse cancelled = submitOrder(
+                session, occupiedKey, request, 200
+        );
+        assertEquals(occupied.id(), cancelled.id());
+        assertEquals(OrderStatus.CANCELLED, cancelled.status());
+        assertIdempotencyMapping(userId, occupiedKey, occupied.id());
+        assertInventoryAndOrderCount(tripId, 1, 1);
+
+        // The failed key can now create an order successfully.
+        OrderCreateResponse recovered = submitOrder(
+                session, retryKey, request, 201
+        );
+        assertNotEquals(occupied.id(), recovered.id());
+        assertIdempotencyMapping(userId, retryKey, recovered.id());
+        assertInventoryAndOrderCount(tripId, 0, 2);
+
+        assertEquals(recovered, submitOrder(session, retryKey, request, 200));
+        assertInventoryAndOrderCount(tripId, 0, 2);
+    }
+
+    @Test
+    void shouldCreateOnlyOneOrderForConcurrentSameKey() throws Exception {
+        // Fixtures must be committed before workers enter their transactions.
+        assertFalse(
+                TransactionSynchronizationManager.isActualTransactionActive()
+        );
+
+        MockHttpSession session = registerAndLogin();
+        Long userId = (Long) session.getAttribute(
+                CurrentUserSession.LOGIN_USER_ID
+        );
+        assertNotNull(userId);
+
+        PassengerResponse passenger = createPassenger(
+                session,
+                new PassengerSaveRequest(
+                        "Same Key Rider",
+                        "00000000000000025X",
+                        "13800000025"
+                )
+        );
+
+        Long tripId = createTrip();
+        createInventory(tripId, 1, 1);
+
+        String key = UUID.randomUUID().toString();
+        OrderCreateRequest request =
+                new OrderCreateRequest(tripId, passenger.id());
+
+        int requestCount = 8;
+        var executor = Executors.newFixedThreadPool(requestCount);
+        CountDownLatch ready = new CountDownLatch(requestCount);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<OrderCreateResult>> futures = new ArrayList<>();
+
+        Long orderId = null;
+        int createdCount = 0;
+
+        try {
+            for (int i = 0; i < requestCount; i++) {
+                futures.add(executor.submit(() -> {
+                    ready.countDown();
+
+                    if (!start.await(15, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException(
+                                "Start signal timed out"
+                        );
+                    }
+
+                    // Every worker uses the same intent in a separate transaction.
+                    return ticketOrderService.create(userId, key, request);
+                }));
+            }
+
+            assertTrue(
+                    ready.await(15, TimeUnit.SECONDS),
+                    "Workers did not become ready in time"
+            );
+
+            long deadline =
+                    System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+            start.countDown();
+
+            for (Future<OrderCreateResult> future : futures) {
+                long remainingNanos = deadline - System.nanoTime();
+                assertTrue(
+                        remainingNanos > 0,
+                        "Concurrent requests timed out"
+                );
+
+                // Every request must succeed; worker exceptions fail the test.
+                OrderCreateResult result = future.get(
+                        remainingNanos, TimeUnit.NANOSECONDS
+                );
+                TicketOrder order = result.order();
+
+                assertNotNull(order);
+                assertNotNull(order.getId());
+
+                if (orderId == null) {
+                    orderId = order.getId();
+                }
+
+                assertEquals(orderId, order.getId());
+                assertEquals(userId, order.getUserId());
+                assertEquals(tripId, order.getTrainTripId());
+                assertEquals(passenger.id(), order.getPassengerId());
+                assertEquals(
+                        OrderStatus.PENDING_PAYMENT,
+                        order.getStatus()
+                );
+
+                if (result.created()) {
+                    createdCount++;
+                }
+            }
+        } finally {
+            // Release waiting workers even when an assertion fails.
+            start.countDown();
+            executor.shutdownNow();
+            assertTrue(
+                    executor.awaitTermination(10, TimeUnit.SECONDS),
+                    "Worker threads did not terminate"
+            );
+        }
+
+        // Only one request may create an order and consume stock.
+        assertEquals(1, createdCount);
+        assertInventoryAndOrderCount(tripId, 0, 1);
+        assertIdempotencyMapping(userId, key, orderId);
+
+        verify(ticketInventoryMapper, times(1))
+                .decrementIfAvailable(tripId);
+        verify(ticketOrderMapper, times(1))
+                .insert(any(TicketOrder.class));
+
+        // An HTTP retry must still find that order after stock reaches zero.
+        OrderCreateResponse repeated =
+                submitOrder(session, key, request, 200);
+        assertEquals(orderId, repeated.id());
+        assertInventoryAndOrderCount(tripId, 0, 1);
+    }
+
+    @Test
+    void shouldValidateIdempotencyKeyHeader() throws Exception {
+        MockHttpSession session = registerAndLogin();
+        Long userId = (Long) session.getAttribute(
+                CurrentUserSession.LOGIN_USER_ID
+        );
+        assertNotNull(userId);
+
+        PassengerResponse passenger = createPassenger(
+                session,
+                new PassengerSaveRequest(
+                        "Header Rider",
+                        "00000000000000026X",
+                        "13800000026"
+                )
+        );
+
+        Long tripId = createTrip();
+        createInventory(tripId, 3, 3);
+
+        OrderCreateRequest request =
+                new OrderCreateRequest(tripId, passenger.id());
+        String body = objectMapper.writeValueAsString(request);
+
+        // Null means the header is absent.
+        String[] invalidKeys = {
+                null,
+                "",
+                " ",
+                " A",
+                "A ",
+                "A B",
+                "private.key",
+                "中文",
+                "A".repeat(65)
+        };
+
+        for (String key : invalidKeys) {
+            var builder = post("/api/orders")
+                    .session(session)
+                    .contentType(APPLICATION_JSON)
+                    .content(body);
+
+            if (key != null) {
+                builder.header("Idempotency-Key", key);
+            }
+
+            mockMvc.perform(builder)
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message")
+                            .value("请求参数不符合要求"));
+
+            assertInventoryAndOrderCount(tripId, 3, 0);
+        }
+
+        // Invalid headers must never reach order creation.
+        verify(ticketInventoryMapper, never())
+                .decrementIfAvailable(tripId);
+        verify(ticketOrderMapper, never())
+                .insert(any(TicketOrder.class));
+
+        Long mappingCount = jdbcTemplate.queryForObject("""
+            SELECT COUNT(*)
+            FROM order_idempotency
+            WHERE user_id = ?
+            """, Long.class, userId);
+        assertEquals(Long.valueOf(0), mappingCount);
+
+        // Cover both length boundaries and case-sensitive keys.
+        String[] validKeys = {
+                "A",
+                "a",
+                "B".repeat(62) + "_-"
+        };
+        List<OrderCreateResponse> orders = new ArrayList<>();
+
+        for (int i = 0; i < validKeys.length; i++) {
+            String key = validKeys[i];
+            OrderCreateResponse created =
+                    submitOrder(session, key, request, 201);
+
+            for (OrderCreateResponse previous : orders) {
+                assertNotEquals(previous.id(), created.id());
+            }
+            orders.add(created);
+
+            assertEquals(
+                    created,
+                    submitOrder(session, key, request, 200)
+            );
+            assertIdempotencyMapping(userId, key, created.id());
+            assertInventoryAndOrderCount(tripId, 2 - i, i + 1);
+        }
+
+        // Payment changes the returned state, but never releases the key.
+        OrderCreateResponse first = orders.get(0);
+        mockMvc.perform(post("/api/orders/{id}/pay", first.id())
+                        .session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PAID"));
+
+        OrderCreateResponse paid =
+                submitOrder(session, "A", request, 200);
+        assertEquals(first.id(), paid.id());
+        assertEquals(OrderStatus.PAID, paid.status());
+        assertInventoryAndOrderCount(tripId, 0, 3);
+    }
+
+    @Test
     void shouldCreateOrderAndDecreaseInventory() throws Exception {
         MockHttpSession session = registerAndLogin();
         Long userId = (Long) session.getAttribute(
@@ -90,6 +537,7 @@ class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
         createInventory(tripId, 2, 2);
 
         MvcResult result = mockMvc.perform(post("/api/orders")
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
                         .session(session)
                         .contentType(APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
@@ -174,6 +622,7 @@ class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
 
         // The first order consumes the last ticket.
         mockMvc.perform(post("/api/orders")
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
                         .session(session)
                         .contentType(APPLICATION_JSON)
                         .content(body))
@@ -183,6 +632,7 @@ class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
 
         // A rejected order must not create another row or negative stock.
         mockMvc.perform(post("/api/orders")
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
                         .session(session)
                         .contentType(APPLICATION_JSON)
                         .content(body))
@@ -233,6 +683,7 @@ class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
         createInventory(tripId, 2, 2);
 
         mockMvc.perform(post("/api/orders")
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
                         .session(otherSession)
                         .contentType(APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
@@ -259,6 +710,7 @@ class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
 
         // Omit the session while keeping the request data valid.
         MvcResult result = mockMvc.perform(post("/api/orders")
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
                         .contentType(APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 new OrderCreateRequest(tripId, passenger.id())
@@ -296,6 +748,7 @@ class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
         // Isolate each validation rule with an authenticated request.
         for (OrderCreateRequest request : invalidRequests) {
             mockMvc.perform(post("/api/orders")
+                            .header("Idempotency-Key", UUID.randomUUID().toString())
                             .session(session)
                             .contentType(APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
@@ -320,6 +773,7 @@ class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
 
         // A missing passenger must not consume stock.
         mockMvc.perform(post("/api/orders")
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
                         .session(session)
                         .contentType(APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
@@ -339,6 +793,7 @@ class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
                 tripWithoutInventory, Long.MAX_VALUE
         }) {
             mockMvc.perform(post("/api/orders")
+                            .header("Idempotency-Key", UUID.randomUUID().toString())
                             .session(session)
                             .contentType(APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(
@@ -385,6 +840,7 @@ class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
 
         Long tripId = createTrip();
         createInventory(tripId, 2, 2);
+        String key = UUID.randomUUID().toString();
 
         DataIntegrityViolationException simulatedFailure =
                 new DataIntegrityViolationException(
@@ -407,7 +863,25 @@ class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
             assertNotNull(remaining);
             assertEquals(1, remaining.intValue());
 
+            // Execute the real INSERT before simulating a later failure.
+            TicketOrder attemptedOrder = invocation.getArgument(0);
+            int inserted = sqlSessionTemplate.insert(
+                    TicketOrderMapper.class.getName() + ".insert",
+                    attemptedOrder
+            );
+
+            assertEquals(1, inserted);
+            assertNotNull(attemptedOrder.getId());
+            assertInventoryAndOrderCount(tripId, 1, 1);
+
             throw simulatedFailure;
+        }).doAnswer(invocation -> {
+            // Subsequent calls execute the real Mapper SQL successfully.
+            TicketOrder order = invocation.getArgument(0);
+            return sqlSessionTemplate.insert(
+                    TicketOrderMapper.class.getName() + ".insert",
+                    order
+            );
         }).when(ticketOrderMapper).insert(any(TicketOrder.class));
 
         // No test transaction may hide a missing service transaction.
@@ -419,6 +893,7 @@ class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
                 DataIntegrityViolationException.class,
                 () -> ticketOrderService.create(
                         userId,
+                        key,
                         new OrderCreateRequest(tripId, passenger.id())
                 )
         );
@@ -431,6 +906,22 @@ class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
                 TransactionSynchronizationManager.isActualTransactionActive()
         );
         assertInventoryAndOrderCount(tripId, 2, 0);
+
+        // The failed transaction must leave no placeholder or order.
+        assertIdempotencyMapping(userId, key, null);
+
+        // The same key must remain usable after the rollback.
+        OrderCreateRequest request = new OrderCreateRequest(tripId, passenger.id());
+        OrderCreateResponse recovered = submitOrder(session, key, request, 201);
+
+        assertIdempotencyMapping(userId, key, recovered.id());
+        assertInventoryAndOrderCount(tripId, 1, 1);
+
+        assertEquals(
+                recovered,
+                submitOrder(session, key, request, 200)
+        );
+        assertInventoryAndOrderCount(tripId, 1, 1);
     }
 
     @Test
@@ -478,8 +969,10 @@ class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
                         throw new IllegalStateException("Start signal timed out");
                     }
 
-                    // Each thread enters its own service transaction.
-                    return ticketOrderService.create(userId, request);
+                    // Each worker represents an independent order.
+                    return ticketOrderService.create(
+                            userId, UUID.randomUUID().toString(), request
+                    ).order();
                 }));
             }
 
@@ -1756,6 +2249,7 @@ class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
     ) throws Exception {
         // Create orders through the real HTTP flow.
         MvcResult result = mockMvc.perform(post("/api/orders")
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
                         .session(session)
                         .contentType(APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
@@ -1768,6 +2262,47 @@ class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
                 result.getResponse().getContentAsByteArray(),
                 OrderCreateResponse.class
         );
+    }
+
+    private OrderCreateResponse submitOrder(
+            MockHttpSession session,
+            String key,
+            OrderCreateRequest request,
+            int expectedStatus
+    ) throws Exception {
+        // Let each test control whether a request is new or repeated.
+        MvcResult result = mockMvc.perform(post("/api/orders")
+                        .header("Idempotency-Key", key)
+                        .session(session)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().is(expectedStatus))
+                .andReturn();
+
+        return objectMapper.readValue(
+                result.getResponse().getContentAsByteArray(),
+                OrderCreateResponse.class
+        );
+    }
+
+    private void assertIdempotencyMapping(
+            Long userId,
+            String key,
+            Long expectedOrderId
+    ) {
+        // Check commited data, including accidental empty placeholders.
+        List<Long> orderIds = jdbcTemplate.queryForList("""
+                SELECT order_id
+                FROM order_idempotency
+                WHERE user_id = ?
+                  AND idempotency_key = ?
+                """, Long.class, userId, key);
+
+        if(expectedOrderId == null) {
+            assertTrue(orderIds.isEmpty(), "Failed requests must leave no record");
+        } else {
+            assertEquals(List.of(expectedOrderId), orderIds);
+        }
     }
 
     private record Credentials(String username, String password) {

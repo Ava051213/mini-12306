@@ -2,6 +2,7 @@ package com.mia.mini12306.common.web;
 
 import com.mia.mini12306.inventory.InsufficientTicketsException;
 import com.mia.mini12306.inventory.TicketInventoryNotFoundException;
+import com.mia.mini12306.order.IdempotencyKeyConflictException;
 import com.mia.mini12306.order.OrderNotFoundException;
 import com.mia.mini12306.order.OrderStateConflictException;
 import com.mia.mini12306.passenger.PassengerAlreadyExistsException;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import java.util.Comparator;
@@ -60,7 +62,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler({
             PassengerAlreadyExistsException.class,
             InsufficientTicketsException.class,
-            OrderStateConflictException.class
+            OrderStateConflictException.class,
+            IdempotencyKeyConflictException.class
     })
     @ResponseStatus(HttpStatus.CONFLICT)
     public ErrorResponse handleConflict(RuntimeException exception) {
@@ -94,6 +97,38 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .orElse("请求参数不符合要求");
 
         // Preserve the framework status and headers.
+        return handleExceptionInternal(
+                exception,
+                new ErrorResponse(message),
+                headers,
+                status,
+                request
+        );
+    }
+
+    @Override
+    protected @Nullable ResponseEntity<Object> handleHandlerMethodValidationException(
+            HandlerMethodValidationException exception,
+            HttpHeaders headers,
+            HttpStatusCode status,
+            WebRequest request
+    ) {
+        // Keep return-value validation failures as safe server errors.
+        if(status.is5xxServerError()) {
+            return handleExceptionInternal(
+                    exception, null, headers, status, request
+            );
+        }
+
+        // Reuse safe field messages for validated request bodies.
+        String message = exception.getBeanResults().stream()
+                .flatMap(errors -> errors.getFieldErrors().stream())
+                .sorted(Comparator.comparing(FieldError::getField)
+                        .thenComparing(error -> String.valueOf(error.getCode())))
+                .findFirst()
+                .map(this::safeValidationMessage)
+                .orElse("请求参数不符合要求");
+
         return handleExceptionInternal(
                 exception,
                 new ErrorResponse(message),

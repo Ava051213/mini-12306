@@ -1,5 +1,6 @@
 package com.mia.mini12306.order.controller;
 
+import com.mia.mini12306.order.OrderCreateResult;
 import com.mia.mini12306.order.TicketOrder;
 import com.mia.mini12306.order.TicketOrderService;
 import com.mia.mini12306.order.dto.OrderCreateRequest;
@@ -11,8 +12,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -31,17 +34,28 @@ public class TicketOrderController {
     }
 
     @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public OrderCreateResponse create(
+    public ResponseEntity<OrderCreateResponse> create(
+            @RequestHeader("Idempotency-Key")
+            @Pattern(regexp = "[A-Za-z0-9_-]{1,64}")
+            String idempotencyKey,
+
             @Valid @RequestBody OrderCreateRequest request,
             HttpServletRequest httpRequest
     ) {
-        // Derive the order owner from the server-side session.
+        // Derive ownership from the authenticated session.
         Long userId = currentUserSession.requireUser(httpRequest).id();
 
-        // Call the injected service through Spring's transaction proxy.
-        TicketOrder order = ticketOrderService.create(userId, request);
-        return OrderCreateResponse.from(order);
+        OrderCreateResult result = ticketOrderService.create(
+                userId, idempotencyKey, request
+        );
+
+        // Select the HTTP status without exposing the internal result.
+        HttpStatus status = result.created()
+                ? HttpStatus.CREATED
+                : HttpStatus.OK;
+
+        return ResponseEntity.status(status)
+                .body(OrderCreateResponse.from(result.order()));
     }
 
     @GetMapping
