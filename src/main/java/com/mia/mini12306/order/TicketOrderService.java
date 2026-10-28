@@ -10,6 +10,7 @@ import com.mia.mini12306.order.mapper.OrderIdempotencyMapper;
 import com.mia.mini12306.order.mapper.TicketOrderMapper;
 import com.mia.mini12306.passenger.Passenger;
 import com.mia.mini12306.passenger.PassengerService;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -167,16 +168,25 @@ public class TicketOrderService {
 
     @Transactional
     public TicketOrder pay(Long userId, Long id) {
-        // Compete for the transition using the current database state.
-        int affectedRows = ticketOrderMapper.updateStatusIfPending(
-                id, userId, OrderStatus.PAID
+        // Payment is allowed only inside the payment window.
+        int affectedRows = ticketOrderMapper.updateStatusIfPendingAndNotExpired(
+                id, userId
         );
 
         TicketOrder order = findByIdForUpdate(userId, id);
 
-        // Repeated payment succeeds; a cancelled order cannot be paid.
-        if(affectedRows == 0
-                && order.getStatus() != OrderStatus.PAID) {
+        if(affectedRows == 0) {
+            // Repeating a successful payment stays idempotent.
+            if(order.getStatus() == OrderStatus.PAID) {
+                return order;
+            }
+
+            // Pending means the deadline blocked it; expired means already closed.
+            if(order.getStatus() == OrderStatus.PENDING_PAYMENT
+                    || order.getStatus() == OrderStatus.EXPIRED) {
+                throw new OrderStateConflictException("订单已超时关闭，无法支付");
+            }
+
             throw new OrderStateConflictException("当前订单状态不允许支付");
         }
 
@@ -211,6 +221,32 @@ public class TicketOrderService {
         }
 
         return order;
+    }
+
+    @Transactional
+    public boolean closeExpired(Long orderId) {
+        // Only the caller that actually changes the status may release stock.
+        int affectedRows = ticketOrderMapper.expireIfPendingAndOverdue(orderId);
+
+        if(affectedRows == 0) {
+            // Already paid, cancelled, closed, or not yet overdue.
+            return false;
+        }
+
+        Long trainTripId = ticketOrderMapper.findTrainTripIdById(orderId);
+
+        if(trainTripId == null) {
+            throw new IllegalStateException("Expired order could not be loaded");
+        }
+
+        int restoredRows = ticketInventoryMapper.restoreOneIfNotFull(trainTripId);
+
+        if(restoredRows != 1) {
+            // Roll back the status change if stock cannot be restored.
+            throw new IllegalStateException("Expired order inventory could not be restored");
+        }
+
+        return true;
     }
 
     private TicketOrder findByIdForUpdate(Long userId, Long id) {

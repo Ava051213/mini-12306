@@ -13,11 +13,12 @@ public interface TicketOrderMapper {
     @Insert("""
             INSERT INTO ticket_orders (
                 user_id, train_trip_id, passenger_id,
-                passenger_name, passenger_id_card, status
+                passenger_name, passenger_id_card, status, pay_deadline
             )
             VALUES (
                 #{userId}, #{trainTripId}, #{passengerId},
-                #{passengerName}, #{passengerIdCard}, #{status}
+                #{passengerName}, #{passengerIdCard}, #{status},
+                DATE_ADD(NOW(), INTERVAL 30 MINUTE)
             )
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
@@ -32,6 +33,7 @@ public interface TicketOrderMapper {
                    passenger_name AS passengerName,
                    passenger_id_card AS passengerIdCard,
                    status,
+                   pay_deadline AS payDeadline,
                    created_at AS createdAt,
                    updated_at AS updatedAt
             FROM ticket_orders
@@ -60,6 +62,7 @@ public interface TicketOrderMapper {
                    passenger_name AS passengerName,
                    passenger_id_card AS passengerIdCard,
                    status,
+                   pay_deadline AS payDeadline,
                    created_at AS createdAt,
                    updated_at AS updatedAt
             FROM ticket_orders
@@ -87,6 +90,20 @@ public interface TicketOrderMapper {
             @Param("targetStatus") OrderStatus targetStatus
     );
 
+    // Only a pending order inside its payment window may be paid.
+    @Update("""
+            UPDATE ticket_orders
+            SET status = 'PAID'
+            WHERE id = #{id}
+              AND user_id = #{userId}
+              AND status = 'PENDING_PAYMENT'
+              AND pay_deadline > NOW()
+            """)
+    int updateStatusIfPendingAndNotExpired(
+            @Param("id") Long id,
+            @Param("userId") Long userId
+    );
+
     // Read the latest state and hold the row lock until transaction completion.
     @Select("""
             SELECT id,
@@ -96,6 +113,7 @@ public interface TicketOrderMapper {
                    passenger_name AS passengerName,
                    passenger_id_card AS passengerIdCard,
                    status,
+                   pay_deadline AS payDeadline,
                    created_at AS createdAt,
                    updated_at AS updatedAt
             FROM ticket_orders
@@ -107,4 +125,33 @@ public interface TicketOrderMapper {
             @Param("id") Long id,
             @Param("userId") Long userId
     );
+
+    // Collect orders whose payment window has closed.
+    @Select("""
+            SELECT id
+            FROM ticket_orders
+            WHERE status = 'PENDING_PAYMENT'
+              AND pay_deadline <= NOW()
+            ORDER BY pay_deadline
+            LIMIT #{limit}
+            """)
+    List<Long> findExpiredIds(@Param("limit") int limit);
+
+    // Close the order only while it is still pending and past its deadline.
+    @Update("""
+            UPDATE ticket_orders
+            SET status = 'EXPIRED'
+            WHERE id = #{id}
+              AND status = 'PENDING_PAYMENT'
+              AND pay_deadline <= NOW()
+            """)
+    int expireIfPendingAndOverdue(@Param("id") Long id);
+
+    // Read the trip after the status change, inside the same transaction.
+    @Select("""
+            SELECT train_trip_id
+            FROM ticket_orders
+            WHERE id = #{id}
+            """)
+    Long findTrainTripIdById(@Param("id") Long id);
 }

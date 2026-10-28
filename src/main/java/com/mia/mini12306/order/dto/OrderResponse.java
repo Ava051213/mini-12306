@@ -11,6 +11,7 @@ public record OrderResponse(
         Long passengerId,
         String passengerName,
         OrderStatus status,
+        LocalDateTime payDeadline,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
@@ -23,6 +24,7 @@ public record OrderResponse(
                 order.getPassengerId(),
                 order.getPassengerName(),
                 order.getStatus(),
+                order.getPayDeadline(),
                 order.getCreatedAt(),
                 order.getUpdatedAt()
         );

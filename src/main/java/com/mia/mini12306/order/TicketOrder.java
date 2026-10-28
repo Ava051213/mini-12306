@@ -19,6 +19,8 @@ public class TicketOrder {
     private String passengerIdCard;
 
     private OrderStatus status;
+    // Deadline decides whether the order may still be paid.
+    private LocalDateTime payDeadline;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

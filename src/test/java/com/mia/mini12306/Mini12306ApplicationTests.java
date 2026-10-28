@@ -56,7 +56,7 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
             ORDER BY installed_rank
             """, String.class);
 
-        assertEquals(List.of("1", "2", "3"), versions);
+        assertEquals(List.of("1", "2", "3", "4"), versions);
 
         Long failedCount = jdbcTemplate.queryForObject("""
             SELECT COUNT(*)
@@ -99,5 +99,28 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
             """, String.class);
 
         assertEquals(List.of("user_id", "id"), indexColumns);
+
+        // The timeout scan relies on this index.
+        List<String> deadlineIndexColumns = jdbcTemplate.queryForList("""
+            SELECT COLUMN_NAME
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'ticket_orders'
+              AND INDEX_NAME = 'idx_ticket_orders_status_deadline'
+            ORDER BY SEQ_IN_INDEX
+            """, String.class);
+
+        assertEquals(List.of("status", "pay_deadline"), deadlineIndexColumns);
+
+        // Every order must carry a deadline.
+        String nullable = jdbcTemplate.queryForObject("""
+                SELECT IS_NULLABLE
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'ticket_orders'
+                  AND COLUMN_NAME = 'pay_deadline'
+                """, String.class);
+
+        assertEquals("NO", nullable);
     }
 }

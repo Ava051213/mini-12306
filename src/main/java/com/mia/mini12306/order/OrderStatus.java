@@ -9,5 +9,8 @@ public enum OrderStatus {
     PAID,
 
     // Cancellation releases the reserved stock.
-    CANCELLED
+    CANCELLED,
+
+    // The payment window closed before payment, so stock was released.
+    EXPIRED
 }

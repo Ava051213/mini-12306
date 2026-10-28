@@ -15,3 +15,7 @@ spring:
   sql:
     init:
       mode: never
+
+order:
+  timeout-close:
+    enabled: false

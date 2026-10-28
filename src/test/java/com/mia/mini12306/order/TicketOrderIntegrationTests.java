@@ -2131,6 +2131,413 @@ class TicketOrderIntegrationTests extends DatabaseIntegrationTest {
         }
     }
 
+    @Test
+    void shouldStorePaymentDeadlineOnCreation() throws Exception {
+        MockHttpSession session = registerAndLogin();
+        PassengerResponse passenger = createPassenger(
+                session,
+                new PassengerSaveRequest(
+                        "Deadline Rider",
+                        "00000000000000041X",
+                        "13800000041"
+                )
+        );
+
+        Long tripId = createTrip();
+        createInventory(tripId, 2, 2);
+
+        OrderCreateResponse created =
+                createOrder(session, tripId, passenger.id());
+
+        // The response must carry the same deadline stored in the row.
+        assertNotNull(created.payDeadline());
+
+        Integer windowMinutes = jdbcTemplate.queryForObject("""
+                SELECT TIMESTAMPDIFF(MINUTE, created_at, pay_deadline)
+                FROM ticket_orders
+                WHERE id = ?
+                """, Integer.class, created.id());
+
+        assertEquals(Integer.valueOf(30), windowMinutes);
+    }
+
+    @Test
+    void shouldNotCloseOrderBeforeDeadline() throws Exception {
+        MockHttpSession session = registerAndLogin();
+        PassengerResponse passenger = createPassenger(
+                session,
+                new PassengerSaveRequest(
+                        "Early Rider",
+                        "00000000000000042X",
+                        "13800000042"
+                )
+        );
+
+        Long tripId = createTrip();
+        createInventory(tripId, 2, 2);
+
+        OrderCreateResponse created =
+                createOrder(session, tripId, passenger.id());
+        assertInventoryAndOrderCount(tripId, 1, 1);
+
+        assertFalse(ticketOrderService.closeExpired(created.id()));
+
+        assertEquals("PENDING_PAYMENT", orderStatus(created.id()));
+        assertInventoryAndOrderCount(tripId, 1, 1);
+    }
+
+    @Test
+    void shouldCloseExpiredOrderAndRestoreStockOnce() throws Exception {
+        MockHttpSession session = registerAndLogin();
+        PassengerResponse passenger = createPassenger(
+                session,
+                new PassengerSaveRequest(
+                        "Expired Rider",
+                        "00000000000000043X",
+                        "13800000043"
+                )
+        );
+
+        Long tripId = createTrip();
+        createInventory(tripId, 2, 2);
+
+        OrderCreateResponse created =
+                createOrder(session, tripId, passenger.id());
+        moveDeadlineToPast(created.id());
+
+        assertTrue(ticketOrderService.closeExpired(created.id()));
+
+        assertEquals("EXPIRED", orderStatus(created.id()));
+        assertInventoryAndOrderCount(tripId, 2, 1);
+
+        // A second run must not release another ticket.
+        assertFalse(ticketOrderService.closeExpired(created.id()));
+        assertInventoryAndOrderCount(tripId, 2, 1);
+
+        mockMvc.perform(get("/api/orders/{id}", created.id())
+                        .session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("EXPIRED"));
+    }
+
+    @Test
+    void shouldRejectPaymentAfterDeadlineWithoutScanning()
+            throws Exception {
+        MockHttpSession session = registerAndLogin();
+        PassengerResponse passenger = createPassenger(
+                session,
+                new PassengerSaveRequest(
+                        "Late Payer",
+                        "00000000000000044X",
+                        "13800000044"
+                )
+        );
+
+        Long tripId = createTrip();
+        createInventory(tripId, 2, 2);
+
+        OrderCreateResponse created =
+                createOrder(session, tripId, passenger.id());
+        moveDeadlineToPast(created.id());
+
+        mockMvc.perform(post("/api/orders/{id}/pay", created.id())
+                        .session(session))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message")
+                        .value("订单已超时关闭，无法支付"));
+
+        // The scanner has not run yet, so the row is still pending.
+        assertEquals("PENDING_PAYMENT", orderStatus(created.id()));
+        assertInventoryAndOrderCount(tripId, 1, 1);
+    }
+
+    @Test
+    void shouldRejectPaymentAtDeadlineInstant() throws Exception {
+        MockHttpSession session = registerAndLogin();
+        PassengerResponse passenger = createPassenger(
+                session,
+                new PassengerSaveRequest(
+                        "Boundary Rider",
+                        "00000000000000045X",
+                        "13800000045"
+                )
+        );
+
+        Long tripId = createTrip();
+        createInventory(tripId, 2, 2);
+
+        OrderCreateResponse created =
+                createOrder(session, tripId, passenger.id());
+
+        jdbcTemplate.update("""
+                UPDATE ticket_orders
+                SET pay_deadline = NOW()
+                WHERE id = ?
+                """, created.id());
+
+        // The window is closed exactly at the deadline.
+        mockMvc.perform(post("/api/orders/{id}/pay", created.id())
+                        .session(session))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message")
+                        .value("订单已超时关闭，无法支付"));
+
+        assertInventoryAndOrderCount(tripId, 1, 1);
+    }
+
+    @Test
+    void shouldRejectCancellationAfterExpiry() throws Exception {
+        MockHttpSession session = registerAndLogin();
+        PassengerResponse passenger = createPassenger(
+                session,
+                new PassengerSaveRequest(
+                        "Cancel After Expiry",
+                        "00000000000000046X",
+                        "13800000046"
+                )
+        );
+
+        Long tripId = createTrip();
+        createInventory(tripId, 2, 2);
+
+        OrderCreateResponse created =
+                createOrder(session, tripId, passenger.id());
+        moveDeadlineToPast(created.id());
+        assertTrue(ticketOrderService.closeExpired(created.id()));
+
+        mockMvc.perform(post("/api/orders/{id}/cancel", created.id())
+                        .session(session))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message")
+                        .value("当前订单状态不允许取消"));
+
+        assertEquals("EXPIRED", orderStatus(created.id()));
+        assertInventoryAndOrderCount(tripId, 2, 1);
+    }
+
+    @Test
+    void shouldNotClosePaidOrCancelledOrders() throws Exception {
+        MockHttpSession session = registerAndLogin();
+        PassengerResponse passenger = createPassenger(
+                session,
+                new PassengerSaveRequest(
+                        "Settled Rider",
+                        "00000000000000047X",
+                        "13800000047"
+                )
+        );
+
+        Long tripId = createTrip();
+        createInventory(tripId, 3, 3);
+
+        OrderCreateResponse paid =
+                createOrder(session, tripId, passenger.id());
+        OrderCreateResponse cancelled =
+                createOrder(session, tripId, passenger.id());
+
+        mockMvc.perform(post("/api/orders/{id}/pay", paid.id())
+                        .session(session))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/orders/{id}/cancel", cancelled.id())
+                        .session(session))
+                .andExpect(status().isOk());
+
+        assertInventoryAndOrderCount(tripId, 2, 2);
+
+        // A closed window must not touch settled orders.
+        moveDeadlineToPast(paid.id());
+        moveDeadlineToPast(cancelled.id());
+
+        assertFalse(ticketOrderService.closeExpired(paid.id()));
+        assertFalse(ticketOrderService.closeExpired(cancelled.id()));
+
+        assertEquals("PAID", orderStatus(paid.id()));
+        assertEquals("CANCELLED", orderStatus(cancelled.id()));
+        assertInventoryAndOrderCount(tripId, 2, 2);
+    }
+
+    @Test
+    void shouldReturnExpiredOrderOnIdempotentRetry() throws Exception {
+        MockHttpSession session = registerAndLogin();
+        PassengerResponse passenger = createPassenger(
+                session,
+                new PassengerSaveRequest(
+                        "Retry After Expiry",
+                        "00000000000000048X",
+                        "13800000048"
+                )
+        );
+
+        Long tripId = createTrip();
+        createInventory(tripId, 2, 2);
+
+        String key = UUID.randomUUID().toString();
+        OrderCreateRequest request =
+                new OrderCreateRequest(tripId, passenger.id());
+
+        OrderCreateResponse first = submitOrder(session, key, request, 201);
+        moveDeadlineToPast(first.id());
+        assertTrue(ticketOrderService.closeExpired(first.id()));
+
+        // The key stays bound: retry returns the same closed order.
+        OrderCreateResponse retried = submitOrder(session, key, request, 200);
+
+        assertEquals(first.id(), retried.id());
+        assertEquals(OrderStatus.EXPIRED, retried.status());
+        assertInventoryAndOrderCount(tripId, 2, 1);
+    }
+
+    @Test
+    void shouldCloseExpiredOrdersInScheduledBatch() throws Exception {
+        MockHttpSession session = registerAndLogin();
+        PassengerResponse passenger = createPassenger(
+                session,
+                new PassengerSaveRequest(
+                        "Batch Rider",
+                        "00000000000000049X",
+                        "13800000049"
+                )
+        );
+
+        Long tripId = createTrip();
+        createInventory(tripId, 3, 3);
+
+        List<Long> orderIds = new ArrayList<>();
+        for(int i = 0; i < 3; i++) {
+            OrderCreateResponse created =
+                    createOrder(session, tripId, passenger.id());
+            orderIds.add(created.id());
+        }
+
+        // The shared test database holds older expired orders, so make these the oldest.
+        for(Long orderId : orderIds) {
+            jdbcTemplate.update("""
+                    UPDATE ticket_orders
+                    SET pay_deadline = '2000-01-01 00:00:00'
+                    WHERE id = ?
+                    """, orderId);
+        }
+        assertInventoryAndOrderCount(tripId, 0, 3);
+
+        // The scheduler bean is disabled under the test profile, so drive it directly.
+        new OrderTimeoutCloseScheduler(ticketOrderMapper, ticketOrderService)
+                .closeExpiredOrders();
+
+        List<String> statuses = jdbcTemplate.queryForList("""
+                SELECT status
+                FROM ticket_orders
+                WHERE train_trip_id = ?
+                ORDER BY id
+                """, String.class, tripId);
+
+        assertEquals(List.of("EXPIRED", "EXPIRED", "EXPIRED"), statuses);
+        assertInventoryAndOrderCount(tripId, 3, 3);
+    }
+
+    @Test
+    void shouldCloseExpiredOrderOnceUnderConcurrentClosing()
+            throws Exception {
+        // Fixtures must be committed before worker threads access them.
+        assertFalse(
+                TransactionSynchronizationManager
+                        .isActualTransactionActive()
+        );
+
+        MockHttpSession session = registerAndLogin();
+        PassengerResponse passenger = createPassenger(
+                session,
+                new PassengerSaveRequest(
+                        "Concurrent Close",
+                        "00000000000000050X",
+                        "13800000050"
+                )
+        );
+
+        Long tripId = createTrip();
+        createInventory(tripId, 5, 5);
+
+        OrderCreateResponse created =
+                createOrder(session, tripId, passenger.id());
+        moveDeadlineToPast(created.id());
+        assertInventoryAndOrderCount(tripId, 4, 1);
+
+        int workerCount = 8;
+        var executor = Executors.newFixedThreadPool(workerCount);
+        CountDownLatch ready = new CountDownLatch(workerCount);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<Boolean>> futures = new ArrayList<>();
+
+        try {
+            for(int i = 0; i < workerCount; i++) {
+                futures.add(executor.submit(() -> {
+                    ready.countDown();
+
+                    if(!start.await(15, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException(
+                                "Start signal timed out"
+                        );
+                    }
+
+                    // Each worker enters a separate service transaction.
+                    return ticketOrderService.closeExpired(created.id());
+                }));
+            }
+
+            assertTrue(
+                    ready.await(15, TimeUnit.SECONDS),
+                    "Workers did not become ready in time"
+            );
+
+            long deadline =
+                    System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+            start.countDown();
+            int closed = 0;
+
+            for(Future<Boolean> future : futures) {
+                long remainingNanos = deadline - System.nanoTime();
+                assertTrue(
+                        remainingNanos > 0,
+                        "Concurrent closing timed out"
+                );
+
+                if(future.get(remainingNanos, TimeUnit.NANOSECONDS)) {
+                    closed++;
+                }
+            }
+
+            // Only one worker may win the status transition.
+            assertEquals(1, closed);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+            assertTrue(
+                    executor.awaitTermination(10, TimeUnit.SECONDS),
+                    "Worker threads did not terminate"
+            );
+        }
+
+        assertEquals("EXPIRED", orderStatus(created.id()));
+        assertInventoryAndOrderCount(tripId, 5, 1);
+    }
+
+    private String orderStatus(Long orderId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT status FROM ticket_orders WHERE id = ?",
+                String.class,
+                orderId
+        );
+    }
+
+    private void moveDeadlineToPast(Long orderId) {
+        // Rewrite the window instead of waiting thirty minutes.
+        jdbcTemplate.update("""
+                UPDATE ticket_orders
+                SET pay_deadline = DATE_SUB(NOW(), INTERVAL 1 MINUTE)
+                WHERE id = ?
+                """, orderId);
+    }
+
+
     private MockHttpSession registerAndLogin() throws Exception {
         String username = "passenger_" + UUID.randomUUID()
                 .toString().replace("-", "");

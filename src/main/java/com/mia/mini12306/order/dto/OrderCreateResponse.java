@@ -10,6 +10,7 @@ public record OrderCreateResponse(
         Long trainTripId,
         Long passengerId,
         OrderStatus status,
+        LocalDateTime payDeadline,
         LocalDateTime createdAt
 ) {
 
@@ -20,6 +21,7 @@ public record OrderCreateResponse(
                 order.getTrainTripId(),
                 order.getPassengerId(),
                 order.getStatus(),
+                order.getPayDeadline(),
                 order.getCreatedAt()
         );
     }
