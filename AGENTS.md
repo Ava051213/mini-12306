@@ -420,7 +420,7 @@
 
 ### 车站与车次经停站（第三阶段第一模块，已实现并通过本地全量回归，待主对话验收）
 
-- 当前阶段及确认来源：2026-10-29 主对话只读核对本地 TrainTrip、Controller、Service、V1 车次表、测试 V2、基础结构断言和测试基类，并补查原接口/DTO后给出完整任务书；用户在主对话总结接口、时间、旧数据及成功正文阶段差异并询问是否推进后，明确回复“可以”。以下任务书契约现已确认，业务、迁移及测试尚未实现。模块 Agent 可在边界内引导用户连贯实施，无需把命名、方法拆分或每条 SQL 带回主对话审批；用户仍亲手修改并运行命令。
+- 当前阶段及确认来源：2026-10-29 主对话只读核对本地 TrainTrip、Controller、Service、V1 车次表、测试 V2、基础结构断言和测试基类，并补查原接口/DTO后给出完整任务书；用户在主对话总结接口、时间、旧数据及成功正文阶段差异并询问是否推进后，明确回复“可以”。以下任务书契约已确认；“业务、迁移及测试尚未实现”是 2026-10-29 任务书确认时的历史状态，实施结果见本节 2026-10-30 的实现状态与验证记录。模块 Agent 可在边界内引导用户连贯实施，无需把命名、方法拆分或每条 SQL 带回主对话审批；用户仍亲手修改并运行命令。
 - 目标：建立可复用车站资料和车次的有序经停时刻，为下模块区间查询提供可信数据；用户理解独立站点、运行实例、站序与到发时间的关系，完成数据库 → Mapper → Service → Controller → 集成测试的查询闭环。
 - 原项目定向阅读（固定 `daf3a2714c00ff263764d23ab10c2eaed2ae842d`）：先看 `resources/db/12306-springboot.sql` 的 t_station/t_train/t_train_station，再沿 `services/ticket-service/src/main/java/org/opengoofy/index12306/biz/ticketservice/` 下的 `controller/TrainStationController.java` → `service/impl/TrainStationServiceImpl.java` → `dao/mapper/TrainStationMapper.java`/实体与 SQL 对照；原服务的 listTrainStationQuery 已读，Mapper 内部需模块对话继续核验。RegionStationController 只用于说明站点字典的调用方，不要求一次实现地区检索；本地模型不声称与原表逐字段相同。
 - 运行实例与旧数据：沿用 train_trips.id 表示本项目一次带日期的车次运行，不在本模块重建列车模板/开行日历。保留现有车次和订单 ID、固定起终点字段及查询/购票契约；不删除、重编号或重置既有业务数据，不凭两个端点推测历史中间站。已有车次没有配置经停表时，其经停查询返回 200/[]，由后续受控数据准备显式补齐。
@@ -429,7 +429,7 @@
 - 原 API/DTO 补查事实（2026-10-29，同一 SHA）：RegionStationController 提供 `GET /api/ticket-service/station/all`，StationQueryRespDTO 为 name/code/spell/regionName；TrainStationController 提供 `GET /api/ticket-service/train-station/query?trainId=...`，TrainStationQueryRespDTO 为 sequence/departure/arrivalTime/departureTime/stopoverTime，sequence 在原项目为 String；原成功正文使用 Result 包装。地区/站点搜索另有 `GET /api/ticket-service/region-station/query`，请求含 queryType/name，本模块暂不纳入。
 - 已确认HTTP契约：沿用上述原仓库 station/all 与 train-station/query 两条路径，trainId 在本阶段对应本地 train_trips.id。站点元素沿原 name/code/spell/regionName，固定 code 升序；经停元素沿原 sequence/departure/arrivalTime/departureTime/stopoverTime，按数据库数值站序升序，输出 sequence 字符串，departure 为站名；中途站停留分钟由到发时刻得到，首末站 stopoverTime 为空。成功正文暂沿本地现有数组风格，原 Result 成功包装留到公共响应对齐时处理，明确这不是原 API 的完全兼容实现。合法不存在车次返回404/message“车次不存在”；已存在但未配置经停返回200/[]；缺失、非正数或不能转换为Long的 trainId 返回受控400/message。查询不要求登录，不创建会话，不写业务数据，沿用统一错误响应。
 - 数据准备与迁移：只新增版本迁移，不修改已执行的 V1、测试 V2、V3/V4；当前下一个正式版本可用 V5，写入前重查两迁移目录避免版本冲突。主迁移仅创建本模块结构，不批量回填旧车次或编造站点 code/线路。测试使用显式的独立车次/站点/经停夹具，不重放 V2、不改原四条参考车次或库存；至少一组含中途站及跨日。无需为每次测试新增固定种子迁移；演示数据来源和开发库导入作为后续明确步骤。
-- 验收要求：用户亲自运行本模块定向测试及全量 mvn test；助手只读核对源码、用户输出和归属于当前源码的报告。测试覆盖字典字段与顺序、经停字段与真正乱序插入后仍按数值站序返回（包括2/10等防止字符串误排）、跨日时刻、未知车次404、旧车次空数组、缺失/非法ID400、匿名访问不创建会话。迁移/结构测试验证新增表、关键唯一约束和外键，以及 Flyway 历史；基础测试当前精确断言版本1/2/3/4与七张表，新增结构必须补齐这些断言，不能删断言或只改成 contains 来掩盖结构差异。数据库重复站序、重复站点code、错误引用等约束应有具体失败结果证据。新测试数量不预定，既有77项不能被跳过或削弱。
+- 验收要求：用户亲自运行本模块定向测试及全量 mvn test；助手只读核对源码、用户输出和归属于当前源码的报告。测试覆盖字典字段与顺序、经停字段与真正乱序插入后仍按数值站序返回（包括2/10等防止字符串误排）、跨日时刻、未知车次404、旧车次空数组、缺失/非法ID400、匿名访问不创建会话。迁移/结构测试验证新增表、关键唯一约束和外键，以及 Flyway 历史；任务书确认时，基础测试精确断言版本1/2/3/4与七张表，新增结构必须补齐这些断言，不能删断言或只改成 contains 来掩盖结构差异。数据库重复站序、重复站点code、错误引用等约束应有具体失败结果证据。新测试数量不预定，既有77项不能被跳过或削弱。
 - 排除范围：本模块不开放车站或经停的写入管理接口，不改区间搜索、不出售中途站票、不做区间库存、席别票价、多乘车人订单、选座、Redis或服务拆分；不升级/降级 Boot。数据准备需要遵守上述完整性规则，公开查询之外不顺带扩展管理端。
 - 运行准备边界：可以优先在已有受保护的 test profile 下验证新增迁移和测试，不把开发库先迁移作为一切源码学习的前置条件。使用默认配置启动应用前，先完成开发库 V3/V4/新增迁移与关单首次扫描的只读影响评估；备份恢复、开发库迁移、数据补齐或改写必须由用户明确同意并亲自执行，不以启动应用的方式绕过确认。
 - 授权和交接：用户亲手写代码、配置、迁移、夹具与测试，并执行命令和 Git 操作；模块 Agent 在任务书确认后引导完整模块，可维护本模块记录与 README 中已实现且有证据的功能，不代写主对话验收结论。发现必须改变上述契约或旧数据原则时先与用户讨论；结束时交接实际变更、验证证据、未覆盖项与Git状态，主对话独立只读验收。
