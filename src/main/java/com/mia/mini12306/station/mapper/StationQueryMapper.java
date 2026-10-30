@@ -36,4 +36,15 @@ public interface StationQueryMapper {
     List<TrainTripStopRow> findStopsByTrainTripId(
             @Param("trainTripId") Long trainTripId
     );
+
+    // Both codes must exist before the interval query can judge the route.
+    @Select("""
+            SELECT COUNT(*)
+            FROM stations
+            WHERE code IN (#{fromCode}, #{toCode})
+            """)
+    int countByCodes(
+            @Param("fromCode") String fromCode,
+            @Param("toCode") String toCode
+    );
 }

@@ -10,6 +10,7 @@ import com.mia.mini12306.passenger.PassengerInUseException;
 import com.mia.mini12306.passenger.PassengerNotFoundException;
 import com.mia.mini12306.station.TrainTripNotFoundException;
 import com.mia.mini12306.train.InvalidTrainTripSearchException;
+import com.mia.mini12306.train.StationCodeNotFoundException;
 import com.mia.mini12306.user.InvalidCredentialsException;
 import com.mia.mini12306.user.NotLoggedInException;
 import com.mia.mini12306.user.UserAlreadyExistsException;
@@ -75,10 +76,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return new ErrorResponse(exception.getMessage());
     }
 
-    @ExceptionHandler(InvalidTrainTripSearchException.class)
+    @ExceptionHandler({
+            InvalidTrainTripSearchException.class,
+            StationCodeNotFoundException.class
+    })
     @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public ErrorResponse handleInvalidTrainTripSearch(
-            InvalidTrainTripSearchException exception
+    public ErrorResponse handleInvalidTrainSearch(
+            RuntimeException exception
     ) {
         return new ErrorResponse(exception.getMessage());
     }
