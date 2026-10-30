@@ -32,4 +32,10 @@ public interface TrainTripMapper {
             @Param("dayStart") LocalDateTime dayStart,
             @Param("nextDayStart") LocalDateTime nextDayStart
     );
+
+    // Distinguish a missing trip from a trip without stops.
+    @Select("""
+            SELECT COUNT(*) FROM train_trips WHERE id = #{id}
+            """)
+    int countById(@Param("id") Long id);
 }

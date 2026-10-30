@@ -56,7 +56,7 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
             ORDER BY installed_rank
             """, String.class);
 
-        assertEquals(List.of("1", "2", "3", "4"), versions);
+        assertEquals(List.of("1", "2", "3", "4", "5"), versions);
 
         Long failedCount = jdbcTemplate.queryForObject("""
             SELECT COUNT(*)
@@ -82,8 +82,10 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
                 "flyway_schema_history",
                 "order_idempotency",
                 "passengers",
+                "stations",
                 "ticket_inventory",
                 "ticket_orders",
+                "train_trip_stops",
                 "train_trips",
                 "users"
         ), tables);
@@ -122,5 +124,42 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
                 """, String.class);
 
         assertEquals("NO", nullable);
+
+        // Station codes are the stable key of the dictionary.
+        List<String> stationCodeIndex = jdbcTemplate.queryForList("""
+            SELECT COLUMN_NAME
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'stations'
+              AND INDEX_NAME = 'uk_stations_code'
+            ORDER BY SEQ_IN_INDEX
+            """, String.class);
+
+        assertEquals(List.of("code"), stationCodeIndex);
+
+        // A trip cannot repeat a stop position.
+        List<String> stopSequenceIndex = jdbcTemplate.queryForList("""
+            SELECT COLUMN_NAME
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'train_trip_stops'
+              AND INDEX_NAME = 'uk_train_trip_stops_trip_sequence'
+            ORDER BY SEQ_IN_INDEX
+            """, String.class);
+
+        assertEquals(List.of("train_trip_id", "stop_sequence"),
+                stopSequenceIndex);
+
+        // Stops must reference one trip and one station.
+        List<String> stopForeignTables = jdbcTemplate.queryForList("""
+            SELECT REFERENCED_TABLE_NAME
+            FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'train_trip_stops'
+              AND REFERENCED_TABLE_NAME IS NOT NULL
+            ORDER BY CONSTRAINT_NAME
+            """, String.class);
+
+        assertEquals(List.of("stations", "train_trips"), stopForeignTables);
     }
 }
