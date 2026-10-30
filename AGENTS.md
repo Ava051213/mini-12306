@@ -28,7 +28,7 @@
 
 2026-10-28 用户同意跨模型协作，并进一步明确沿用原有节奏：开头由主对话与用户确定模块目标、关键规则、方案边界和验收标准；中途由模块 Agent（用户称模型为 `deepseek-v4.1-flash`）完整引导用户完成阅读、局部设计、编码、测试编写、排错和文档维护，不要求逐步返回主对话；结束后回到主对话独立只读验收。用户仍亲手修改代码、配置和迁移，运行命令并完成 Git 操作。本约定不授权助手启动其他对话、发送任务或自动修改业务文件；由用户自行携带开头任务书与最终交接摘要。
 
-- 主对话在开头尽量一次性明确业务契约、数据与历史迁移原则、事务与并发要求、验证标准及排除范围，用户确认后交给模块 Agent 连贯推进。未收到第五模块已确认任务书前，仍只做只读准备，不进入实现；本次协作方式调整不等于已确认第五模块业务规则。
+- 主对话在开头尽量一次性明确业务契约、数据与历史迁移原则、事务与并发要求、验证标准及排除范围，用户确认后交给模块 Agent 连贯推进。每个新模块在任务书确认前只做只读准备，不进入实现；总体目标或协作方式的确认不等于具体模块业务规则已确认。
 - 模块 Agent 负责模块内完整学习流程。命名、方法拆分、具体 SQL、索引、事务代理组织、测试设计和排错等，在已确认契约与方案边界内直接与用户讨论落实、记录依据，无需主对话逐项审批。发现规则缺口或方案需调整时，先向用户说明事实、选项与影响，由用户决定是否补充规则、调整范围或带回主对话；不能悄悄改变已确认契约，也不把每个技术问题默认升级给主对话。
 - 模块 Agent 不假定能访问主对话历史，也不根据模型名称推定能力。先读实际文件与 Git 状态；无法读取时明确缺少哪些材料，不编造路径、源码、测试、数据库状态或其他对话的决定。
 - 主对话维护全局规则、阶段路线及最终验收结论；模块 Agent 可直接维护当前模块小节的事实记录及 README 中对应功能说明，不代写“主对话验收通过”，不覆盖其他模块或既有未提交记录。README 只将已经实现的行为写为功能事实，未实现方案必须注明待定。
@@ -41,7 +41,9 @@
 ## 项目目标与边界
 
 - 参考项目：<https://github.com/nageoffer/12306>。
-- 已确定：从零手写精简版，边做边讲。参考原项目不代表直接复制其代码、架构或全部功能。
+- 总目标（2026-10-29 用户明确：“总目标就是实现原仓库”）：通过用户亲手实现和理解，最终复现参考仓库的实际业务能力、设计与技术架构。后续规划以这一终点为依据，不将第一版精简闭环作为最终范围。
+- 阶段策略：从零手写精简版、边做边讲是已完成的起步方式；单体、单席别、全程票等属于阶段性边界。后续根据原仓库实际源码和依赖关系逐步扩展，涉及架构与组件的具体模块仍先明确契约和验收标准，再由用户实施。
+- 原仓库参考基线（2026-10-29 只读核验）：`daf3a2714c00ff263764d23ab10c2eaed2ae842d`，为本次查询时 main 指向的提交；本轮目录和源码按此 SHA 读取。后续先沿用该基线，切换版本需明确记录差异。不凭历史导览或记忆将某项功能或组件列为已核实的原项目实现；详细差距与建议路线见“原仓库复现基线与路线盘点”。
 - 原项目的具体实现和版本要求需要实际查证，不凭记忆推断；本文件记录的是本项目现状。
 - 第一版范围和总体架构已由用户同意，见下方“第一版目标与架构”。字段、接口和具体实现由对应模块对话逐步讨论，不在开工前一次性定死。
 
@@ -161,7 +163,7 @@
 - 自动化测试通过 MockMvc 显式传递 `MockHttpSession` 验证会话延续；2026-10-25 用户另通过真实 HTTP 客户端验证 JSESSIONID 保存、携带后访问及退出后旧 Cookie 返回 401，详见“真实 HTTP 购票闭环验收”。30 分钟自然超时仍未实测。
 - 登录前已有会话的替换、超长登录密码、空白登录输入、会话对应账号已不存在、无会话时退出等分支已写入实现，但本轮未为它们补充专项测试。
 - 当前 `/me`、四个乘车人入口及全部订单入口已复用 `CurrentUserSession`；乘车人、下单、订单查询、支付和取消的未登录及跨账号场景已验证，归属来自服务端会话。后续受保护接口继续遵循这一规则。
-- 乘车人删除已实现并由用户跑通全量回归，规则见“乘车人删除（第二阶段小模块，待主对话验收）”；身份证仅做格式校验，相同内容修改和并发修改尚未专项验证。
+- 乘车人删除已实现、通过全量回归并由主对话只读验收通过，规则见“乘车人删除（第二阶段小模块，主对话只读验收通过）”；身份证仅做格式校验，相同内容修改和并发修改尚未专项验证。
 - 乘车人未登录测试使用有效请求体，验证四个入口返回 401；增改接口的 `@Valid` 参数校验先于方法内身份检查，未登录且请求体无效时可能先返回 400。2026-10-25 用户已补写并完整暂存 users.sql 和 passengers.sql，五份脚本在独立空库初始化及应用余票查询验证通过；未使用全新容器或重新运行全量测试。
 - 当前未实现 CSRF 防护或部署环境的 cookie 安全配置；浏览器前端接入或部署时继续完善。2026-10-25 已完成 MVC 统一错误响应与参数校验日志脱敏，虚构输入的响应及控制台日志回归通过；不代表所有日志来源或覆盖配置下均已脱敏，具体实现与验证边界见“统一错误响应与参数校验日志脱敏”。
 
@@ -365,16 +367,84 @@
 
 ## 当前停留点与交接规则
 
-- 当前工作：第二阶段小模块“乘车人删除”已由用户完成实现与全量回归（2026-10-28 22:02:44 +08:00，77 项通过），未提交、未推送，待主对话独立只读验收；详见下节。第五模块“支付超时关单”已提交并推送 `372a3b1`，其未验证项见对应小节。
-- 当前阶段：第一版业务模块与第二阶段五个模块均已完成本地实现与验证，第五模块业务提交为 `372a3b1`；乘车人删除小模块已实现并通过全量回归，尚未提交、未验收。第三模块代码与文档为 `0bf3faf`、`e427939`；第四模块为 `b3341bf`，文档收尾 `b03befd`。开发库此前显式 baseline 到版本 1，尚无开发库执行 V3／V4 的证据；测试使用受限账号 `mini12306_test` 和独立库 `mini_12306_test`。
+- 当前工作（2026-10-29）：用户明确总目标为实现原仓库，同意第三阶段按“车站与车次经停站 → 区间车次查询 → 席别与区间票价”推进，并在主对话给出首模块完整任务书及API阶段差异后以“可以”确认契约。首模块状态为已确认、待用户与模块对话实现；本主对话负责交接和最终独立只读验收。此前“运行环境、安全与可运维性完善”及其五模块排序未确认为第三阶段路线。第二阶段乘车人删除业务与文档提交为 `e054706`、`7faaf3b`，支付超时关单业务提交为 `372a3b1`，验收与未验证项见对应小节。
+- 已确认规则：总体终点改为复现原仓库；继续由用户亲手修改与运行命令，主对话规划、只读核验并维护交接文档。目标确认不授权助手代改业务、配置、测试或数据库，不授权构建、测试、数据库、容器和 Git 写操作，也不授权创建其他对话或子代理。
+- 本轮证据与边界：主对话读取实际文档、配置、V3/V4、订单和乘车人相关源码，并读取现有九份 Surefire XML，合计 77 项通过、0 失败、0 错误、0 跳过；报告时间为 2026-10-28 22:01:56–22:02:44，最新 src 修改为 21:58:12。这是既有运行证据复核，未重新执行测试，不构成第三阶段新增功能验收。开发库 V3/V4、历史订单实际分布、恢复演练、真实调度及其余既有未覆盖项仍未验证；本轮未连接数据库。
+- 本轮 Git 与修改：只读检查本地 main 与 origin/main 同指 `7faaf3b`，未刷新远程引用；暂存区为空，既有未暂存修改为 `.gitignore`（新增 `.workbuddy/`）与本文件中的前期验收记录。本轮仅局部更新本文件的总目标与当前交接，保留既有修改；README、业务、配置和测试未改，未暂存、提交或推送。
+- 下一步：用户将已确认的“车站与车次经停站”任务书交给模块对话，由其引导完整阅读、局部设计、用户编码、测试和文档维护；完成后回主对话验收，不要求中途逐项返回审批。开发库 V3/V4 与历史订单影响评估作为运行准备单独安排，默认启动前应先明确迁移和调度的影响；未授权助手执行迁移、备份恢复或数据修改。后续阶段按本节下方的原仓库差距清单逐步展开。
+- 当前阶段：第一版业务模块与第二阶段五个模块及乘车人删除小模块均已完成本地实现、验证和主对话验收。第五模块业务提交为 `372a3b1`；乘车人删除业务提交为 `e054706`，文档收尾为 `7faaf3b`。第三模块代码与文档为 `0bf3faf`、`e427939`；第四模块为 `b3341bf`，文档收尾 `b03befd`。开发库此前显式 baseline 到版本 1，尚无开发库执行 V3／V4 的证据；测试使用受限账号 `mini12306_test` 和独立库 `mini_12306_test`。
 - 2026-10-24 库存模块开始时只读检查：`main` 与本地 `origin/main` 指向相同提交，工作区干净，车次业务提交包含完整的 9 个源码、测试和 SQL 文件；用户确认车次模块已完成 Git 收尾。本轮未刷新远程引用，未重新执行测试。
 - 历史环境记录（第四模块时期）：第四模块本地验收通过，用户运行 `mvn test` 于 2026-10-28 11:39:06 完成，60 项全部通过；业务契约、并发、失败回滚、迁移和边界见下节。业务提交 `b3341bf` 已推送，文档收尾提交为 `b03befd`。业务、配置、测试、数据库与 Git 写操作仍由用户负责。开发库的备份位于用户目录 `C:\Users\34248\mini12306-backups\20261027_132508\mini_12306_before_flyway.sql`，大小 234709 字节且有 mysqldump 完成标记；尚未演练恢复。开发库 baseline 操作前计数为 users=574、passengers=505、trips=377、inventory=352、orders=396、remaining tickets 总和=706；操作后用户查询确认相同，`flyway_schema_history` 只有 version=1、description=`<< Flyway Baseline >>`、type=BASELINE、checksum 空、success=1。用户运行 `mvn spring-boot:run` 的日志确认连到 `mini_12306`、Flyway 校验成功、当前版本 1、无待执行迁移，Tomcat 8080 启动成功；MySQL 8.4 高于 Flyway 已验证版本 8.1 的警告仍存在。用户是否已按 Ctrl+C 停止该进程未确认。
 - 第二阶段路线已于 2026-10-25 经用户确认，按五个边界明确的模块推进：第一，统一错误响应与参数校验日志脱敏；第二，订单列表分页与索引分析；第三，独立测试库与数据库版本迁移（Flyway）；第四，下单幂等；第五，支付超时关单。小件穿插：乘车人删除（2026-10-28 已完成实现与全量回归）、历史时间迁移评估。浏览器前端与部署作为后续可选方向，接入时同步处理 CSRF、Cookie 和环境配置；继续保持单体，按具体问题决定是否增加组件。
 - 第一、二模块完成情况分别见对应章节。第三模块决定与验证记录见下节。README 与本文件由助手根据实际配置和验证结果维护；当前 README 已更新 Flyway、测试数据库准备、迁移和测试数据保留说明。第三模块代码与文档提交分开；后续模块对话开始前须检查暂存区、工作区和完整差异，保留既有提交，不做 Git 写操作。
 
-### 乘车人删除（第二阶段小模块，实现与全量回归完成，待主对话验收）
+### 原仓库复现基线与路线盘点（2026-10-29，只读完成，第三阶段顺序已确认）
 
-- 当前阶段：2026-10-28 由模块 Agent 引导、用户亲手完成实现、测试与全量回归。代码、测试与文档均未提交、未推送；尚未经主对话独立只读验收。
+- 已确认目标及来源：用户先明确“总目标就是实现原仓库”，随后同意先核验原仓库、建立差距清单和阶段顺序。精简版是起点；原项目实际具有的业务、前端、公共组件与架构均纳入长期对照，不能把单体或暂不使用中间件当成永久排除项。用户仍亲手实现，助手不代跑命令或修改业务文件。
+- 固定参考：[nageoffer/12306 @ daf3a2714c00ff263764d23ab10c2eaed2ae842d](https://github.com/nageoffer/12306/tree/daf3a2714c00ff263764d23ab10c2eaed2ae842d)。GitHub commits API 返回提交时间 `2026-03-12T14:45:22Z`、主题 `docs(readme): 优化 Ragent AI 链接文本显示`；本轮目录 API 返回 `truncated=false`。本次是学习与盘点基线，不表示已运行或验收原项目。
+- 核验方式：助手只读联网获取固定 SHA 的 README、根与相关子 POM、目录、聚合库建表脚本及定向源码；随后核对本地 TrainTrip、TrainTripMapper、OrderCreateRequest、TicketOrder、TicketInventoryMapper 和 POM。只读网络访问已获工具授权；未克隆仓库、安装依赖、编译或启动原项目。部分 raw 文件读取超时，改经 GitHub contents API 读取；末次补查目录遭 API 限流，未读取的实现不作完成结论。
+
+原仓库已核验事实与本地差距（路径均相对于各自仓库；接口或依赖存在不等于完整业务已验证）：
+
+| 方向 | 原仓库证据 | 当前 mini-12306 与剩余差距 |
+| --- | --- | --- |
+| 站点与区间查询 | `RegionStationController`、`TrainStationController`、`TrainStationServiceImpl`；聚合 SQL 有 `t_region/t_station/t_train_station/t_train_station_relation`；`TicketServiceImpl.pageListTicketQueryV1` 查询站点关系 | 本地 `train_trips` 只有固定起终点与发到时间，查询 Mapper 按这两个字段过滤；尚无独立站点、经停顺序或中途站查询 |
+| 席别与区间票价 | `resources/db/12306-springboot.sql` 的 `t_train_station_price` 含 train_id、departure、arrival、seat_type、price；TicketServiceImpl 读取票价 | 本地只有一种席别，订单和查询没有票价或金额；金额单位、服务端定价和历史订单如何过渡待模块确认 |
+| 车厢、座位与区间库存 | 聚合 SQL 的 `t_carriage/t_seat/t_ticket`；`SeatServiceImpl`、`TrainSeatTypeSelector` 调用及 `StationCalculateUtil.throughStation/takeoutStation` | 本地按车次减数量，不分座、不记录乘车区间；尚未实现同座位的区间占用、复用或选座。选座器的完整策略分支仍需下一轮细读 |
+| 多乘车人与订单明细 | `PurchaseTicketReqDTO.passengers/chooseSeats/departure/arrival`；`TicketOrderCreateReqDTO.ticketOrderItems`；`TicketOrderItemCreateReqDTO` 含席别、座位和 amount；OrderServiceImpl 写主单、明细与乘车人关联 | 本地 OrderCreateRequest 只收一位 passengerId，TicketOrder 是单票订单；需主子订单、整单原子性、金额、区间与座位快照及状态规则 |
+| 用户体系与身份 | `UserInfoController` 有资料修改/注销等入口；`UserLoginServiceImpl` 含用户名/手机/邮箱登录、JWT、缓存登录资料、注册锁与 BloomFilter；网关 TokenValidateGatewayFilterFactory 解析 Authorization | 本地是用户名+BCrypt 与 HttpSession，具备账号隔离；多身份登录、资料与注销、跨服务身份传播尚未实现。网关源码存在注销后 token 有效性 TODO，不能将其视为已解决；保留本地密码与隐私保护要求 |
+| 支付与退款 | `PayServiceImpl.commonPay/callbackPay` 写支付单并发送支付成功消息；退款 Controller、RefundServiceImpl 及退款消息文件存在 | 本地仅模拟订单状态，暂无支付单、渠道回调或退款。原 PayServiceImpl.commonRefund 返回 null，RefundServiceImpl 也保留 TODO；需逐链确认实际能力，不据接口名称宣称退款端到端完成；渠道开发与外部账号授权后续讨论 |
+| 缓存与消息 | TicketServiceImpl 的 Redis/Redisson、缓存加载、令牌桶调用；OrderServiceImpl 创建订单时发送 RocketMQ 延迟关单消息；支付结果及关单消费者在目录中存在 | 本地 MySQL 幂等和条件更新、定时关单已实现，但尚无 Redis、消息和跨系统一致性；后续需要缓存一致性、重试/消费幂等及故障验证，不直接照搬本地事务结论 |
+| 模块、网关与分片 | 根 POM 聚合 dependencies/frameworks/services/tests；services 含 aggregation/gateway/user/ticket/order/pay；aggregation POM 引入四业务模块；分片算法和配置文件存在，聚合 SQL 有多张分表 | 本地单 Maven 模块、单进程、单库；需公共组件、业务模块组织、网关、服务通信及分片。两种启动方式由原 README 明示，聚合不等于没有中间件；分片路由规则和完整运行配置本轮未细读 |
+| 前端与运行支撑 | `console-vue/package.json` 声明 Vue 3、Ant Design Vue、Axios；services POM 声明 Actuator/Prometheus；ticket POM 声明 Nacos/OpenFeign/Sentinel/XXL-JOB/Hippo4j 等 | 本地暂无前端和这些支撑。前端页面完成度、监控配置和上述依赖在具体链路中的生效方式仍待核验，不能由依赖声明推断已运行 |
+
+阶段依赖顺序（第三阶段的三个模块顺序已获用户同意，后续阶段仍为规划建议；具体模块须确认任务书）：
+
+1. 第三阶段先扩展查询业务基础：车站与经停站 → 区间车次查询 → 席别与区间票价。原理是先有站点顺序与合法区间，才能定义区间票价、座位占用和多乘车人购买。此阶段不提前宣称中途站已经可以买票。
+2. 随后扩展完整购票模型：车厢和具体座位 → 区间占用/复用 → 多乘车人主子订单 → 选座策略。分小模块保留可验证闭环，支付、取消、超时、幂等及旧订单适配必须随模型改变回归；不能让查询支持区间后仍按全程数量库存出售区间票。
+3. 逐步建立原项目的公共组件与用户体系：Maven 业务模块、通用响应/分页/异常、责任链/策略、持久层与 ID、Redis 缓存、JWT 与身份上下文、多身份登录及资料/注销。公共能力在出现真实调用方时抽取；网关接入时验证身份可信边界，不将客户端 userId 作为购买归属。
+4. 完善支付单、渠道适配、支付结果回调、退款与前端；再推进消息驱动的支付同步/超时关单和消费幂等、重试与补偿。前端可在所需 API 稳定后穿插接入；浏览器安全同时处理。按源码实际链路识别原项目 TODO 和需补齐的部分。
+5. 完成目标架构与运行方式：聚合服务组织 → 网关和微服务通信/治理 → 分库分表 → 购票高并发优化及缓存/令牌桶方案 → 原仓库功能覆盖复核、性能和故障演练。缓存、消息、公共组件可为后续模块提前准备，具体先后按完整链路契约调整；完整复现时两种启动方式和相关组件都应核验，不把依赖齐全当作完成。
+
+第三阶段三个模块的学习目标与验收轮廓（顺序已同意，具体契约按模块确认）：
+
+- 车站与车次经停站：理解独立站点、车次运行实例、站序和到发时刻；实现站点/经停查询。验收真实数据持久化、稳定按站序返回、跨日时刻与合法性、非法/不存在参数、既有固定起终点流程回归。编号、唯一约束、数据来源及旧车次回填方式需任务书确认。
+- 区间车次查询：依据同车次的站序判断起终站与方向，返回对应上下车时刻。验收正常中途站、反向/同站/不经停、日期与跨日边界、排序和空结果；按乘车站日期还是始发日期筛选需明确确认。本模块不包含区间下单或复用当前全程余票作为区间余票。
+- 席别与区间票价：理解车次+区间+席别的价格维度及服务端定价。验收多席别和多区间的正确价格、缺失票价处理、金额单位与精度边界及既有接口兼容；是否同轮进入订单金额快照需任务书决定，不能由客户端提交金额决定成交价。
+
+- 运行准备：开发库 V3/V4 执行、历史时间与订单影响、备份恢复仍是待验证事项。默认启动会自动迁移且启用调度，先完成只读评估，备份、恢复、迁移或数据处理需用户明确授权并由用户执行；这项准备不代替业务复现主线。源码补充：V4 只回填期限，实际 EXPIRED 与库存恢复由调度条件更新完成；每轮最多 100 单，是否到期取数据库 NOW()，不能将所有历史订单总数当作首次关闭数量。关单 WARN 传入异常对象，README“日志只记录订单 ID”的描述不足以证明异常链脱敏，后续应按源码与新证据修正。
+- 技术版本待决定：固定原仓库 BOM 是 Java 17、Spring Boot 3.0.7、Spring Cloud 2022.0.3；本地是 Java 17、Boot 4.0.8。是否调整本地基线、如何适配原项目中间件和持久层依赖尚未确认，不自动降级，也不默认原依赖兼容 Boot 4。
+- 状态区分：用户已确认总目标、只读盘点、第三阶段三个模块顺序及首模块任务书；参考版本及上述定向源码已由主对话读取；后续模块具体业务规则和后续阶段顺序仍需展开；没有新增业务实现、用户执行验证或第三阶段模块验收。原仓库本身未构建、启动或测试，完整配置、选座各策略、前端各页面和全部 TODO 尚未穷尽。
+- 实际修改与 Git：本轮仅助手局部维护 AGENTS.md，保留该文件的既有验收与目标记录及 `.gitignore` 修改；README、业务、配置和测试未改。开始时本地 main 与 origin/main 同指 `7faaf3b`、暂存区为空；未刷新远程引用，未暂存、提交或推送。
+- 下一步：首个业务模块“车站与车次经停站”的任务书已确认，由用户自行携带任务书交模块对话；继续采用少量定向源码阅读，不要求用户一次读完整仓库，主对话结束时独立只读验收。
+
+### 车站与车次经停站（第三阶段第一模块，已实现并通过本地全量回归，待主对话验收）
+
+- 当前阶段及确认来源：2026-10-29 主对话只读核对本地 TrainTrip、Controller、Service、V1 车次表、测试 V2、基础结构断言和测试基类，并补查原接口/DTO后给出完整任务书；用户在主对话总结接口、时间、旧数据及成功正文阶段差异并询问是否推进后，明确回复“可以”。以下任务书契约现已确认，业务、迁移及测试尚未实现。模块 Agent 可在边界内引导用户连贯实施，无需把命名、方法拆分或每条 SQL 带回主对话审批；用户仍亲手修改并运行命令。
+- 目标：建立可复用车站资料和车次的有序经停时刻，为下模块区间查询提供可信数据；用户理解独立站点、运行实例、站序与到发时间的关系，完成数据库 → Mapper → Service → Controller → 集成测试的查询闭环。
+- 原项目定向阅读（固定 `daf3a2714c00ff263764d23ab10c2eaed2ae842d`）：先看 `resources/db/12306-springboot.sql` 的 t_station/t_train/t_train_station，再沿 `services/ticket-service/src/main/java/org/opengoofy/index12306/biz/ticketservice/` 下的 `controller/TrainStationController.java` → `service/impl/TrainStationServiceImpl.java` → `dao/mapper/TrainStationMapper.java`/实体与 SQL 对照；原服务的 listTrainStationQuery 已读，Mapper 内部需模块对话继续核验。RegionStationController 只用于说明站点字典的调用方，不要求一次实现地区检索；本地模型不声称与原表逐字段相同。
+- 运行实例与旧数据：沿用 train_trips.id 表示本项目一次带日期的车次运行，不在本模块重建列车模板/开行日历。保留现有车次和订单 ID、固定起终点字段及查询/购票契约；不删除、重编号或重置既有业务数据，不凭两个端点推测历史中间站。已有车次没有配置经停表时，其经停查询返回 200/[]，由后续受控数据准备显式补齐。
+- 已确认数据模型：新增车站字典（id、唯一站点 code、name，以及原站点响应需要的 spell/regionName）和经停表（车次实例引用、车站引用、正整数站序、到站/发车 LocalDateTime）。同车次站序不能重复；一个车次是否允许重复经过同一站需对照原始路线语义确认，当前原源码证据不足，不预设唯一约束。字典站名不作为全局唯一标识。具体表/列名、长度、主键、外键、CHECK 与索引由模块 Agent 与用户落实，不允许通过 Java 排序代替 SQL 明确排序；独立城市字典、拼音检索和维护页面留到后续。
+- 已确认经停时间：完整时刻表至少有始发站和终到站；始发到站时间可空、发车时间必填，终到发车时间可空、到站时间必填，中途站两者均有且到站不晚于发车。按站序的相邻站须先发后到，允许跨日，用完整北京时间 DATETIME/LocalDateTime；第一站/最后站的站名及有效到发时刻分别与 train_trips 的起终点和到发时刻一致。跨行完整性由数据准备/导入校验保证，不声称单个 CHECK 可以保证全部规则。残缺记录不应伪装为完整可售线路。
+- 原 API/DTO 补查事实（2026-10-29，同一 SHA）：RegionStationController 提供 `GET /api/ticket-service/station/all`，StationQueryRespDTO 为 name/code/spell/regionName；TrainStationController 提供 `GET /api/ticket-service/train-station/query?trainId=...`，TrainStationQueryRespDTO 为 sequence/departure/arrivalTime/departureTime/stopoverTime，sequence 在原项目为 String；原成功正文使用 Result 包装。地区/站点搜索另有 `GET /api/ticket-service/region-station/query`，请求含 queryType/name，本模块暂不纳入。
+- 已确认HTTP契约：沿用上述原仓库 station/all 与 train-station/query 两条路径，trainId 在本阶段对应本地 train_trips.id。站点元素沿原 name/code/spell/regionName，固定 code 升序；经停元素沿原 sequence/departure/arrivalTime/departureTime/stopoverTime，按数据库数值站序升序，输出 sequence 字符串，departure 为站名；中途站停留分钟由到发时刻得到，首末站 stopoverTime 为空。成功正文暂沿本地现有数组风格，原 Result 成功包装留到公共响应对齐时处理，明确这不是原 API 的完全兼容实现。合法不存在车次返回404/message“车次不存在”；已存在但未配置经停返回200/[]；缺失、非正数或不能转换为Long的 trainId 返回受控400/message。查询不要求登录，不创建会话，不写业务数据，沿用统一错误响应。
+- 数据准备与迁移：只新增版本迁移，不修改已执行的 V1、测试 V2、V3/V4；当前下一个正式版本可用 V5，写入前重查两迁移目录避免版本冲突。主迁移仅创建本模块结构，不批量回填旧车次或编造站点 code/线路。测试使用显式的独立车次/站点/经停夹具，不重放 V2、不改原四条参考车次或库存；至少一组含中途站及跨日。无需为每次测试新增固定种子迁移；演示数据来源和开发库导入作为后续明确步骤。
+- 验收要求：用户亲自运行本模块定向测试及全量 mvn test；助手只读核对源码、用户输出和归属于当前源码的报告。测试覆盖字典字段与顺序、经停字段与真正乱序插入后仍按数值站序返回（包括2/10等防止字符串误排）、跨日时刻、未知车次404、旧车次空数组、缺失/非法ID400、匿名访问不创建会话。迁移/结构测试验证新增表、关键唯一约束和外键，以及 Flyway 历史；基础测试当前精确断言版本1/2/3/4与七张表，新增结构必须补齐这些断言，不能删断言或只改成 contains 来掩盖结构差异。数据库重复站序、重复站点code、错误引用等约束应有具体失败结果证据。新测试数量不预定，既有77项不能被跳过或削弱。
+- 排除范围：本模块不开放车站或经停的写入管理接口，不改区间搜索、不出售中途站票、不做区间库存、席别票价、多乘车人订单、选座、Redis或服务拆分；不升级/降级 Boot。数据准备需要遵守上述完整性规则，公开查询之外不顺带扩展管理端。
+- 运行准备边界：可以优先在已有受保护的 test profile 下验证新增迁移和测试，不把开发库先迁移作为一切源码学习的前置条件。使用默认配置启动应用前，先完成开发库 V3/V4/新增迁移与关单首次扫描的只读影响评估；备份恢复、开发库迁移、数据补齐或改写必须由用户明确同意并亲自执行，不以启动应用的方式绕过确认。
+- 授权和交接：用户亲手写代码、配置、迁移、夹具与测试，并执行命令和 Git 操作；模块 Agent 在任务书确认后引导完整模块，可维护本模块记录与 README 中已实现且有证据的功能，不代写主对话验收结论。发现必须改变上述契约或旧数据原则时先与用户讨论；结束时交接实际变更、验证证据、未覆盖项与Git状态，主对话独立只读验收。
+- 实现状态（2026-10-30，用户亲手完成，模块 Agent 只读核对）：新增正式迁移 `src/main/resources/db/migration/V5__create_station_and_train_trip_stop.sql`；新增 `station/` 包 8 个文件：`Station`、`TrainTripStopRow`（JOIN 投影）、`mapper/StationQueryMapper`、`dto/StationResponse`、`dto/TrainStopResponse`、`StationQueryService`、`controller/StationController`、`TrainTripNotFoundException`；`TrainTripMapper` 新增 `countById`；`GlobalExceptionHandler` 的 404 列表加入 `TrainTripNotFoundException`（模块决定把异常放 station 包，Service 同包免 import）；`Mini12306ApplicationTests` 版本断言改为 1–5、表清单补两张，并新增站点 code 唯一键、经停 (trip, sequence) 唯一键、经停两个外键三组断言。
+- 结构与约束：`stations(id, code, name, spell, region_name)`，`code` 唯一、站名不唯一；`train_trip_stops(id, train_trip_id, station_id, stop_sequence, arrival_at, departure_at)`，`(train_trip_id, stop_sequence)` 唯一，`stop_sequence` 用 INT（不用原项目的 varchar，避免 10 排在 2 前），外键到 `train_trips` 与 `stations`，CHECK 要求站序为正、至少一个时刻、到站不晚于发车；未对 `(train_trip_id, station_id)` 设唯一键，重复经过同一站仍开放。
+- 接口与服务行为：`GET /api/ticket-service/station/all` 按 `code` 升序返回 `name/code/spell/regionName`，不返回 id；`GET /api/ticket-service/train-station/query?trainId=` 以 `train_trips.id` 为 trainId，SQL 按数值站序 `ORDER BY`，返回 `sequence/departure/arrivalTime/departureTime/stopoverTime`，`sequence` 输出字符串、`departure` 为站名、首末站 `stopoverTime` 为 null；时刻返回完整 LocalDateTime（ISO-8601），与原项目 `HH:mm` 有意不同，否则跨日不可验证。Service 先用 `countById` 判 404“车次不存在”，存在但未配置经停返回 200/[]；trainId 缺失、非正数、非数字分别由框架绑定与 `@Positive` 拦截为受控 400；两个接口不要求登录、不创建会话、不写数据。
+- 验证记录（用户执行）：`mvn "-Dtest=StationQueryIntegrationTests" test` 于 2026-10-30 14:46:47 完成，11 项通过；`mvn test` 于 14:48:13 完成，**88 项通过，0 失败、0 错误、0 跳过，BUILD SUCCESS**（基础 5、错误响应 6、库存 4、订单 38、乘车人删除 7、乘车人 5、车站经停 11、车次 4、登录 4、注册 4）。日志确认 test profile、独立库 `mini_12306_test`、Flyway 校验 5 个迁移、当前版本 5 无待执行。模块 Agent 核对 10 份 Surefire XML 合计 88 项、报告时间 14:47:32–14:48:13，最新 src 修改为 14:45:59，早于报告生成；未代跑构建或测试。
+- 排错记录：首次定向运行 11 项中 `shouldRejectNonPositiveStopSequence` 失败，期望 `DataIntegrityViolationException`，实际 `UncategorizedSQLException`。原因是 MySQL 的 CHECK 违规报 SQLSTATE HY000、错误码 3819，Spring 不能归类为完整性违规；改为断言父类 `DataAccessException` 并校验消息含 `chk_train_trip_stops_sequence` 后通过。结论：用 `DataIntegrityViolationException` 兜底不能覆盖 CHECK 违规，当前没有写入经停的业务路径，无实际影响；后续若有写入接口需另行处理。
+- 未覆盖边界：没有站点与经停的写入接口、管理端或导入脚本，开发库既无站点数据也不会自动获得；首末站与 `train_trips` 一致、相邻站先发后到、同车次是否允许重复经停，均只由数据准备保证，未做库级或应用级校验；未用真实 HTTP 客户端验证两个接口，只有 MockMvc；未做数据量、执行计划或真实浏览器验证；拼音/地区检索、区间查询、中途售票、席别票价均为后续模块；测试新增的随机站点与车次记录保留在测试库，不清理。
+- Git 状态：本模块开始时本地 `main` 与 `origin/main` 同指 `7faaf3b`，暂存区为空，既有 `.gitignore` 与 `AGENTS.md` 未暂存修改保留。结束时新增 8 个 Java 文件、V5 迁移已由用户暂存（AM）、既有文件修改仍在工作区。本次 AGENTS.md 与 README 的文档更新尚未暂存、提交或推送，提交与推送由用户执行。
+- 下一步：交回主对话独立只读验收。验收后可进入第三阶段第二模块“区间车次查询”；进入前需先用受控数据准备给示例车次补齐站点与经停，否则区间查询只能拿到空结果。
+
+### 乘车人删除（第二阶段小模块，主对话只读验收通过）
+
+- 当前阶段：2026-10-28 由模块 Agent 引导、用户亲手完成实现、测试与全量回归，并由主对话完成独立只读验收。业务提交 `e054706` 与文档提交 `7faaf3b` 均已推送。
 - 已确认契约（主对话任务书，用户转交）：接口 `DELETE /api/passengers/{id}`，成功 204；身份只来自 HttpSession，未登录 401；记录不存在与他人记录统一 404 且响应不可区分；已被 `ticket_orders` 引用的乘车人返回 409；删除带账号归属条件；不新增软删除；不改动订单、支付、取消、库存、幂等和支付超时逻辑。
 - 外键事实（用户提供两个库的 `SHOW CREATE TABLE ticket_orders`，2026-10-28）：开发库 `mini_12306` 与测试库 `mini_12306_test` 的 `fk_ticket_orders_passenger` 均未声明 ON DELETE，实际为 RESTRICT，`passenger_id` 为 NOT NULL。被引用的乘车人因此无法硬删除，历史订单快照与引用关系得以保留。
 - 实际修改（用户亲手写入）：新增 `passenger/PassengerInUseException.java`（409，消息“该乘车人已被订单引用，无法删除”）；`PassengerMapper` 新增 `countOrdersByPassengerId` 与 `deleteByIdAndUserId`（DELETE 同时限定 id 与 user_id 并返回影响行数）；`PassengerService` 新增 `@Transactional delete`；`PassengerController` 新增 `@DeleteMapping("/{id}")` + `@ResponseStatus(NO_CONTENT)`；`GlobalExceptionHandler.handleConflict` 的异常列表加入新异常，复用 `message` 字段。
@@ -384,26 +454,26 @@
 - 测试：新增 `PassengerDeletionIntegrationTests`，7 项。覆盖成功删除后详情 404／列表仅剩另一条／数据库行数为 0；未登录 401、不创建会话、记录不变；他人记录 404 且原记录逐字段不变；不存在 ID 404；重复删除首次 204 再次 404；真实下单后被引用返回 409 且乘客、订单快照、订单状态、库存均不变；`not-a-number` 400 与 `0` 404。未修改或放宽既有断言，未使用跳过注解；复用真实注册、登录、下单流程与独立测试库，测试记录保留不清理。
 - 验证记录（用户执行）：`mvn "-Dtest=PassengerDeletionIntegrationTests" test` 于 2026-10-28 22:00:55 +08:00 完成，7 项通过；`mvn test` 于 22:02:44 完成，**77 项通过，0 失败、0 错误、0 跳过，BUILD SUCCESS**（基础 5、错误响应 6、库存 4、订单 38、乘车人删除 7、乘车人 5、车次 4、登录 4、注册 4）。日志确认 test profile、独立库 `mini_12306_test`、Flyway 版本 4、无待执行迁移。助手核对 9 份 Surefire 报告的数量与时间（22:01:56–22:02:44）一致，`find src -newer` 无输出，未发现报告生成后修改源码；助手未代跑构建或测试。
 - 未覆盖边界：删除与下单同时发生的竞态只由外键兜底，无专项并发用例；未用真实 HTTP 客户端验证该接口；未在开发库执行删除；删除后 ID 不复用、历史订单无法再关联到有效乘客属于既有设计，未做数据修复；`DataIntegrityViolationException` 未按错误码 1451 精确筛选，该 DELETE 上其他完整性错误的处理未验证。
-- Git 状态：本地 `main` 与 `origin/main` 同指 `372a3b1`；工作区含本模块 6 个源文件改动（新增异常与测试、Mapper／Service／Controller／GlobalExceptionHandler 修改）以及 AGENTS.md、README.md 的文档更新，全部未提交。两个新文件当前为 `AM`：暂存区里仍是空骨架，提交前必须重新 `git add`，否则会只提交空文件。助手未做任何 Git 写操作。
-- 下一步：交主对话独立只读验收。重点复核判定顺序、`user_id` 是否真正进入 DELETE、事务与外键兜底的职责划分、他人记录是否一律 404（不因是否被引用而变化）、7 项用例对契约场景的覆盖，以及 README 删除小节与实现的一致性。
+- 主对话验收结论（2026-10-28）：**通过，无阻断问题**。实际源码确认归属查询先于引用计数，外部账号和不存在记录统一走 404；删除 SQL 同时限定 `id` 与 `user_id`；`@Transactional` 负责本次删除流程的回滚边界，不能消除检查与并发下单之间的竞态，外键 RESTRICT 才是并发引用的最终兜底。7 项新增测试均有具体业务结果断言，无 `@Disabled`、`@Ignore` 或无条件跳过；9 份 Surefire 报告合计 77 项通过，报告时间为 22:01:56–22:02:44，未发现报告生成后源码或测试修改。README 删除小节与当前实现及未覆盖边界一致。
+- Git 状态：用户于 2026-10-28 亲自提交并推送两次：`e054706` — `feat: allow owners to delete passengers without order references`，6 个文件、444 行新增（新增异常 8 行、测试类 384 行、Mapper／Service／Controller／GlobalExceptionHandler 修改），两个新文件按完整内容入库，不再是空骨架；`7faaf3b` — `docs: record passenger deletion completion`，AGENTS.md 与 README.md 共 47 行新增、10 行删除。推送后本地 `main` 与 `origin/main` 同指 `7faaf3b`。本条提交编号记录为提交之后的文档更新，尚未提交。助手未做任何 Git 写操作。
+- 下一步：乘车人删除小模块已完成验收。后续可进入第二阶段收尾评估或新的进阶模块；开发库 V3/V4 执行、历史订单影响评估、真实 HTTP、并发竞态与真实数据库故障仍按各模块边界单独安排，不因本次验收自动完成。
 
-### 支付超时关单（第五模块，实现与全量回归完成，未提交）
+### 支付超时关单（第五模块，主对话只读验收通过，已提交推送）
 
-- 当前阶段：2026-10-28 用户授权模块 Agent 全权负责本模块构建。模块 Agent 提交完整设计清单，用户以“可以”确认后进入实现，当前完成第 1 步（期限字段、迁移、映射与响应）并已由用户运行验证。
+- 当前阶段：2026-10-28 用户授权模块 Agent 全权负责本模块构建。模块 Agent 提交完整设计清单，用户以“可以”确认后进入实现；用户完成代码、迁移、测试和全量回归，业务提交 `372a3b1` 已推送，主对话已完成独立只读验收。未验证边界仍见本节。
 - 已确认前提：继续采用单体 Spring Boot + MySQL、HttpSession 身份和真实 MySQL 集成测试；用户亲手实现与运行命令；沿用前四模块的账号隔离、错误响应、订单分页和下单幂等契约。现有订单状态为 PENDING_PAYMENT、PAID、CANCELLED，TicketOrder 还没有支付截止字段；只读搜索未发现调度启用或关单任务实现。
 - 本次只读复核补充：现有 Surefire XML 的类路径包含 spring-context 7.0.9，基础调度 API 可由该框架提供，不能由未声明独立调度依赖推断项目缺少该能力；实际尚未启用相关任务。基础测试精确断言迁移版本 1/2/3、七张表及账号订单索引；新增迁移须按最终方案更新版本断言，仅加列或索引不改变表清单，字段和新索引应按需求另设断言。orders=396 仅为此前 baseline 前后的订单总数快照，不是当前待支付订单数。本轮未连接数据库核实历史订单分布。
-- 待主对话讨论、用户确认：支付期限和精确截止条件（含并发锁等待期间如何判断）；超时终态与支付/取消/查询的返回规则；时间来源、时区与精度；成功幂等键对应超时订单的语义；历史待支付单与历史时间偏差的过渡；调度频率、批量上限、失败重试及停机补偿；事务边界、锁顺序、索引和测试方式。
-- 仅为候选建议：30 分钟、独立 EXPIRED 状态、数据库时间、单体定时分批扫描、每单独立事务、状态与期限条件更新和库存恢复同事务、后续新增 V4。以上均未被确认为第五模块契约，不能据此生成并执行迁移、修改代码或处理历史订单；实施前必须核对当时迁移版本仍然可用，不修改已执行的 V1、测试 V2 或 V3。
+- 已确认契约：支付期限固定 30 分钟并由下单时刻起算；使用数据库 `NOW()` 判定；超时终态为 `EXPIRED`；支付同时要求待支付状态和期限未到；取消逻辑不改；幂等重试命中已关单订单返回原单；关单以独立事务批量处理，每批最多 100 单，库存只在状态真正迁移时恢复，测试 profile 关闭调度。
 - 当前验证基线：第四模块已有八份报告共 60 项通过，完成时间为 2026-10-28 11:39:06 +08:00；这不是第五模块验证。开发库 V3 执行、备份恢复演练、旧时间迁移、全新空库重放等既有边界仍未验证，不因本模块准备而自动扩大授权。
 - Git 与文档：本轮开始只读检查显示本地 main 与 origin/main 对应文档提交 b03befd，只有 AGENTS.md 的既有主对话验收记录未提交，暂存区为空；本轮继续局部维护本文件。后续 Agent 必须重新检查实际状态，不覆盖这些内容，不假设仍然干净或提交未变。
-- 当前阶段：2026-10-28 业务、配置、迁移与测试均由用户亲手完成，全量回归通过，尚未提交和推送。按跨模型约定，模块自查不代替主对话独立验收。
+- 当前阶段：2026-10-28 业务、配置、迁移与测试均由用户亲手完成，全量回归通过；业务提交 `372a3b1` 已提交并推送，主对话独立验收通过。按跨模型约定，模块自查不代替主对话独立验收。
 - 已确认契约（用户 2026-10-28 以“可以”确认模块 Agent 提交的设计）：期限固定 30 分钟、由下单时刻起算并落库；判定统一使用数据库 `NOW()`；超时终态新增 `EXPIRED`，不复用 `CANCELLED`；支付的条件更新同时要求 `status = 'PENDING_PAYMENT'` 与 `pay_deadline > NOW()`；取消逻辑不改，`EXPIRED` 因条件更新影响 0 行返回 409“当前订单状态不允许取消”；查询与列表正常返回 `EXPIRED`；幂等重试命中已被关单的订单返回 200 和原单、不释放键；库存只由真正完成状态迁移的那一次恢复，恢复失败整笔回滚；单实例 fixedDelay 扫描、每批 100 单、按 `pay_deadline` 升序、每单独立事务、单笔失败不影响同批其他订单；test profile 关闭调度。
 - 已完成修改（用户亲手修改）：正式迁移 `V4__add_order_payment_deadline.sql`（可空列 → 回填 `created_at + 30 分钟` → 收紧 NOT NULL → 新增 `idx_ticket_orders_status_deadline (status, pay_deadline)`）；`OrderStatus` 增 `EXPIRED`；`TicketOrder` 增 `payDeadline`；`TicketOrderMapper` 的 INSERT 用 `DATE_ADD(NOW(), INTERVAL 30 MINUTE)` 生成期限，四处 SELECT 补别名映射，新增 `updateStatusIfPendingAndNotExpired`、`findExpiredIds`、`expireIfPendingAndOverdue`、`findTrainTripIdById`；`TicketOrderService.pay` 改用带期限的条件更新并对 `PENDING_PAYMENT`／`EXPIRED` 统一返回“订单已超时关闭，无法支付”，新增 `@Transactional closeExpired(Long)`；新增 `OrderTimeoutCloseScheduler`（`@ConditionalOnProperty` + `@Scheduled(fixedDelayString)`，批大小 100，单笔异常仅记 WARN）；`Mini12306Application` 加 `@EnableScheduling`；`OrderResponse`、`OrderCreateResponse` 增 `payDeadline`；`application-test.yaml` 增 `order.timeout-close.enabled: false`；`Mini12306ApplicationTests` 版本断言改为 1/2/3/4 并新增列非空与新索引断言；`TicketOrderIntegrationTests` 新增 10 项用例与 `orderStatus`、`moveDeadlineToPast` 两个辅助方法。
 - 事务与锁顺序：`create` 为幂等行 → 库存行 → 新订单行；`cancel` 与 `closeExpired` 均为订单行 → 库存行；`pay` 只涉及订单行。关单先做“状态 + 期限”条件更新，仅影响 1 行者读取 `train_trip_id` 并恢复库存，恢复返回非 1 行时抛异常回滚状态更新。上述为业务行锁分析，不构成死锁不存在的证明，也未做死锁注入验证。
 - 验证记录（用户执行）：`mvn -Dtest=Mini12306ApplicationTests test` 于 14:26:49 使测试库迁移到 v4，5 项通过；`mvn -Dtest=TicketOrderIntegrationTests test` 于 14:33:43 与 14:47:38 各 28 项通过；`mvn test` 于 15:29:48 首次为 70 项中 1 失败（`shouldCloseExpiredOrdersInScheduledBatch` 三张单仍为 `PENDING_PAYMENT`），判断为用例受测试库历史待支付单干扰——`findExpiredIds` 按期限升序 `LIMIT 100`，刚设为一分钟前的三张被历史单挤出批次；改用固定 `2000-01-01` 期限后 `mvn test` 于 15:33:45 为 **70 项通过，0 失败、0 错误、0 跳过，BUILD SUCCESS**（基础 5、错误响应 6、库存 4、订单 38、乘车人 5、车次 4、登录 4、注册 4）。批次用例会顺带关闭测试库中至多 100 张历史待支付单并各恢复 1 张库存。
 - 未验证事项与已知边界：开发库仍停在版本 1，V3、V4 未在开发库执行；历史待支付单在开发库的实际数量与时间分布未查询，按约定默认“全部回填、首次扫描即过期”。调度循环用直接构造 `OrderTimeoutCloseScheduler` 驱动，未验证真实定时触发、进程停机期间的积压补偿与跨实例并发；8 线程用例是固定并发场景，不是压力测试或穷尽调度；恢复库存失败导致回滚的分支没有专项用例；日志脱敏未针对关单 WARN 做检查。
 - 最近核对的 Git 状态：用户于 2026-10-28 亲自提交 `372a3b1` — `feat: close unpaid orders after the payment window`，14 个文件、692 行新增、22 行删除，其中两个新文件按完整内容入库（`OrderTimeoutCloseScheduler.java` 51 行、`V4__add_order_payment_deadline.sql` 15 行），不存在只提交骨架的情况；已推送 `b03befd..372a3b1`。首次 `git push` 因 `github.com:22` 连接超时失败，改用 `git push origin main` 成功。提交后本地 `main` 与 `origin/main` 同指 `372a3b1`，工作区干净。本节关于提交哈希与推送状态的补充为提交之后的文档更新，尚未提交。
-- 下一步：交主对话独立只读验收。验收时需重点确认：期限与判定时钟的口径、`EXPIRED` 与 `CANCELLED` 的语义边界、关单与支付/取消的竞争处理、库存仅恢复一次的机制、V4 回填对历史数据的实际影响，以及开发库尚未执行 V3/V4 这一事实。本条文档更新是否再提交一次由用户决定。
+- 主对话验收结论：通过，无阻断问题。未验证边界为开发库 V3/V4 执行、历史待支付订单影响、真实定时触发、停机补偿、跨实例并发、恢复库存失败专项和关单日志脱敏；这些不改变本地学习范围内的实现验收结论。
 
 ### 下单幂等（主对话只读验收通过，业务与模块文档已推送）
 
