@@ -439,7 +439,7 @@
 - 验证记录（用户执行）：`mvn "-Dtest=StationQueryIntegrationTests" test` 于 2026-10-30 14:46:47 完成，11 项通过；`mvn test` 于 14:48:13 完成，**88 项通过，0 失败、0 错误、0 跳过，BUILD SUCCESS**（基础 5、错误响应 6、库存 4、订单 38、乘车人删除 7、乘车人 5、车站经停 11、车次 4、登录 4、注册 4）。日志确认 test profile、独立库 `mini_12306_test`、Flyway 校验 5 个迁移、当前版本 5 无待执行。模块 Agent 核对 10 份 Surefire XML 合计 88 项、报告时间 14:47:32–14:48:13，最新 src 修改为 14:45:59，早于报告生成；未代跑构建或测试。
 - 排错记录：首次定向运行 11 项中 `shouldRejectNonPositiveStopSequence` 失败，期望 `DataIntegrityViolationException`，实际 `UncategorizedSQLException`。原因是 MySQL 的 CHECK 违规报 SQLSTATE HY000、错误码 3819，Spring 不能归类为完整性违规；改为断言父类 `DataAccessException` 并校验消息含 `chk_train_trip_stops_sequence` 后通过。结论：用 `DataIntegrityViolationException` 兜底不能覆盖 CHECK 违规，当前没有写入经停的业务路径，无实际影响；后续若有写入接口需另行处理。
 - 未覆盖边界：没有站点与经停的写入接口、管理端或导入脚本，开发库既无站点数据也不会自动获得；首末站与 `train_trips` 一致、相邻站先发后到、同车次是否允许重复经停，均只由数据准备保证，未做库级或应用级校验；未用真实 HTTP 客户端验证两个接口，只有 MockMvc；未做数据量、执行计划或真实浏览器验证；拼音/地区检索、区间查询、中途售票、席别票价均为后续模块；测试新增的随机站点与车次记录保留在测试库，不清理。
-- Git 状态：本模块开始时本地 `main` 与 `origin/main` 同指 `7faaf3b`，暂存区为空，既有 `.gitignore` 与 `AGENTS.md` 未暂存修改保留。结束时新增 8 个 Java 文件、V5 迁移已由用户暂存（AM）、既有文件修改仍在工作区。本次 AGENTS.md 与 README 的文档更新尚未暂存、提交或推送，提交与推送由用户执行。
+- Git 状态：本模块开始时本地 `main` 与 `origin/main` 同指 `7faaf3b`，暂存区为空。业务提交 `85574f3`（`feat: add station dictionary and train trip stop queries`，13 个文件、615 行新增、2 行删除，8 个 Java 文件与 V5 迁移均为完整内容）；文档提交 `872c0aa`（`docs: record station and train trip stop completion`，2 个文件、130 行新增、24 行删除）；已推送 `7faaf3b..872c0aa`。提交前发现此前 `git add` 只把新文件暂存成空骨架（4 行／0 行），已重新暂存真实内容才提交。提交后工作区仅余既有 `.gitignore` 修改，未提交。
 - 下一步：交回主对话独立只读验收。验收后可进入第三阶段第二模块“区间车次查询”；进入前需先用受控数据准备给示例车次补齐站点与经停，否则区间查询只能拿到空结果。
 
 ### 乘车人删除（第二阶段小模块，主对话只读验收通过）
