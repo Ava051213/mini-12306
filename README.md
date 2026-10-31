@@ -9,7 +9,7 @@
 - 已被订单引用的乘车人不能删除，保留历史订单中的乘车人快照。
 - 按日期和固定起终站查询示例车次。
 - 车站字典查询与车次经停站查询（按站序返回到发时刻）。
-- 按上车站、下车站和日期查询经过该区间的车次（只查车次，不含票价与区间余票）。
+- 按上车站、下车站和日期查询经过该区间的车次，并返回已配置的席别票价（不含区间余票）。
 - 余票查询、创建订单、订单列表分页和详情。
 - 模拟支付、取消订单及恢复库存。
 - 条件扣减防止超卖，事务保证订单与库存的一致性。
@@ -259,6 +259,45 @@ Service 先做归属校验和引用检查以给出明确的 404／409 语义，�
   查询不带日期；本版直接查经停表并按上车站日期过滤。
 - `GET /api/trains` 保持原样，仍按固定起终点和始发日期查询，本模块未改动。
 
+## 席别与区间票价
+
+`GET /api/ticket-service/ticket/query` 的每个车次元素在原有六字段后新增
+`seatClassList`，例如：
+
+```json
+{"trainId":"7","trainNumber":"G35","departure":"北京南","arrival":"南京南",
+ "departureTime":"2026-11-03T07:00:00","arrivalTime":"2026-11-03T09:30:00",
+ "seatClassList":[{"type":0,"price":550.00},{"type":2,"price":180.00}]}
+```
+
+- `type` 是席别编码：0 商务座、1 一等座、2 二等座。代码侧集中定义在
+  `SeatType` 枚举，数据库用 `CHECK (seat_type IN (0, 1, 2))` 兜底。
+- `price` 是元金额，两位小数，由整数“分”精确换算（`BigDecimal.valueOf(cents, 2)`），
+  不做舍入。原项目是 `price / 100` 保留一位小数，123.45 会变成 123.5。
+- 元素按 `type` 升序；只返回已配置票价的席别。整段未配价时车次保留、
+  `seatClassList` 为 `[]`，空数组不代表零元或售罄。
+- 不返回 `quantity`、`candidate`，不复用整趟库存，也不提供票价写入接口。
+- 计价维度是“运行实例 + 上车站序 + 下车站序 + 席别”，四者合起来唯一：
+
+```text
+train_trip_interval_prices
+  (train_trip_id, departure_sequence, arrival_sequence, seat_type)  UNIQUE
+  price_cents INT NOT NULL CHECK (price_cents > 0)
+  CHECK (arrival_sequence > departure_sequence)
+  FK (train_trip_id, departure_sequence) -> train_trip_stops (train_trip_id, stop_sequence)
+  FK (train_trip_id, arrival_sequence)   -> train_trip_stops (train_trip_id, stop_sequence)
+```
+
+- 两个站序就是 `train_trip_stops.stop_sequence`，即这趟车运行里的第几站；
+  价格行引用别的车次的站序会被复合外键拒绝。
+- 查询时先按区间取车次，再用一条
+  `WHERE (train_trip_id, departure_sequence, arrival_sequence) IN (...)` 批量取价，
+  不逐车次查。该条件正好落在唯一键前缀上。
+- 与原项目的差异：原表 `t_train_station_price` 只有 `train_id` 单列索引、没有唯一键，
+  价格可为 NULL，起终站存站名，`pageListTicketQueryV1` 对每个车次单独查一次价。
+  本版按站序引用、四列唯一、价格非空为正，并一次批量读取。
+- 迁移 V6 只建表，不回填；既有车次不会自动获得票价，也不会进入订单金额。
+
 ## 测试
 
 保持本地 MySQL 运行，在项目根目录执行：
@@ -312,6 +351,11 @@ MySQL 默认时区已配置为 +08:00；修正前生成的历史时间尚未迁�
 311 笔全部转为 `EXPIRED`；订单总数仍为 396。登记 baseline 时站点表、经停表
 与幂等记录均为 0，baseline 本身不会写入示例车站或经停数据；此后用户已手工
 准备 G35 及五站经停（见上节），幂等记录数量在该时点之后未再查询。
+
+开发库 `mini_12306` 仍停在 V5，V6 只在测试库 `mini_12306_test` 执行过。
+票价没有任何写入接口，也没有示例票价数据；开发库要看到 `seatClassList`
+需先授权迁移 V6 并手工准备票价行。`ticket_inventory` 仍是整趟数量，
+区间余票与座位占用尚未实现，订单也不携带席别或金额。
 
 超时关单只做到单实例定时扫描，没有补偿任务、消息队列或多实例协调；
 停机期间到期的订单依赖下次启动后的扫描。关单日志只记录订单 ID，
