@@ -186,19 +186,63 @@ class PricedOrderIntegrationTests extends DatabaseIntegrationTest {
 
         assertEquals(5, remainingTickets(otherSeat.tripId()));
 
-        // A price from another trip must not leak into this one.
+        // Two trips share the same stop range and seat type, but differ in price.
         Route priced = createRoute(5);
         createPrice(priced.tripId(), 1, 3, 2, 555);
 
-        mockMvc.perform(post("/api/orders/priced")
+        MvcResult pricedResult = mockMvc.perform(post("/api/orders/priced")
                         .header("Idempotency-Key", UUID.randomUUID().toString())
                         .session(session)
                         .contentType(APPLICATION_JSON)
                         .content(pricedBody(priced.tripId(), passenger.id(), 2)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.amount").value(5.55));
+                .andExpect(jsonPath("$.amount").value(5.55))
+                .andReturn();
 
+        OrderCreateResponse pricedOrder = objectMapper.readValue(
+                pricedResult.getResponse().getContentAsByteArray(),
+                OrderCreateResponse.class
+        );
+
+        Route competitor = createRoute(5);
+        createPrice(competitor.tripId(), 1, 3, 2, 777);
+
+        MvcResult competitorResult = mockMvc.perform(post("/api/orders/priced")
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .session(session)
+                        .contentType(APPLICATION_JSON)
+                        .content(pricedBody(competitor.tripId(), passenger.id(), 2)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.amount").value(7.77))
+                .andReturn();
+
+        OrderCreateResponse competitorOrder = objectMapper.readValue(
+                competitorResult.getResponse().getContentAsByteArray(),
+                OrderCreateResponse.class
+        );
+
+        // Each order keeps the price of its own trip.
+        assertEquals(555, amountCentsOf(pricedOrder.id()));
+        assertEquals(777, amountCentsOf(competitorOrder.id()));
         assertEquals(4, remainingTickets(priced.tripId()));
+        assertEquals(4, remainingTickets(competitor.tripId()));
+
+        // A third trip has no full-route price even though the others do.
+        Route unpriced = createRoute(5);
+        String unpricedKey = UUID.randomUUID().toString();
+
+        mockMvc.perform(post("/api/orders/priced")
+                        .header("Idempotency-Key", unpricedKey)
+                        .session(session)
+                        .contentType(APPLICATION_JSON)
+                        .content(pricedBody(unpriced.tripId(), passenger.id(), 2)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message")
+                        .value("该车次全程席别未配置票价"));
+
+        assertEquals(5, remainingTickets(unpriced.tripId()));
+        assertEquals(0, orderCount(unpriced.tripId()));
+        assertEquals(0, idempotencyCount(unpricedKey));
     }
 
     @Test
