@@ -504,7 +504,7 @@
 - 结构断言：`Mini12306ApplicationTests` 版本改为 1–7，表清单仍 10 张，新增订单/幂等模式列非空、快照列可空与两表 CHECK 名单断言。
 - 开发库迁移（2026-10-31 21:51，用户执行）：迁移前记录 V6、无失败行、orders=396、idempotency=0、prices=3、余票合计=1037；备份为 `C:\Users\34248\mini12306-backups\mini_12306_v6_20261031.sql`（248314 字节）。用户运行 `mvn spring-boot:run "-Dspring-boot.run.arguments=--order.timeout-close.enabled=false --server.port=0"`，Flyway 校验 7 个迁移后应用 V7（0.824s），now at v7。迁移后核对：V7 success=1、新列 11、两表 CHECK 10，四项计数与迁移前一致；未回滚，演示票价未补，408 全程计价仍会返回未配价。
 - 未覆盖边界：没有按席别容量、车厢座位、区间库存复用或报价锁定；查询接口不返回区间余票；计价入口未做真实 HTTP 验证；未测试多实例关单。
-- Git 状态（提交前，2026-10-31）：业务、迁移、测试与 README/本文件改动均未提交；用户尚未执行 `git add`/`commit`/`push`。`git status` 中多个新文件显示 `AM`（暂存的是旧版本），提交前需重新暂存；本轮模块 Agent 未执行任何 Git 写操作。本节取代“当前停留点”中 2026-10-31 的 Git 状态描述（该条尚未刷新）。
+- Git 状态（2026-10-31）：业务与迁移提交 `adfc1df`（`feat: create priced orders from full-route seat fare`），文档提交 `da9b118`（`docs: record priced order module`），已推送，`main` 与 `origin/main` 同步，工作区干净。本轮模块 Agent 未执行任何 Git 写操作；本节补记的 Git 事实随后另成一笔文档提交。本节取代“当前停留点”中 2026-10-31 的 Git 状态描述（该条尚未刷新）。
 - 当前状态：待主对话独立只读验收。后续若改用按席别容量与区间库存，属于路线调整，需另立契约。
 
 ### MyBatis-Plus 接入安排（第四模块后，技术方向已提出，具体接入契约待确认）
