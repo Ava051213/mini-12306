@@ -15,4 +15,6 @@ public class TrainTripInterval {
     private String arrivalStation;
     private LocalDateTime departureAt;
     private LocalDateTime arrivalAt;
+    private Integer departureSequence;
+    private Integer arrivalSequence;
 }

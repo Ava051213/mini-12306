@@ -47,8 +47,8 @@ class TicketQueryIntegrationTests extends DatabaseIntegrationTest {
                 .andExpect(jsonPath("$.trainList[0].arrival").value(trip.names().get(3)))
                 .andExpect(jsonPath("$.trainList[0].departureTime").value("2026-12-20T23:30:00"))
                 .andExpect(jsonPath("$.trainList[0].arrivalTime").value("2026-12-21T02:00:00"))
-                // Seats and prices belong to later modules and must not appear.
-                .andExpect(jsonPath("$.trainList[0].seatClassList").doesNotExist());
+                // A trip without configured prices keeps an empty array.
+                .andExpect(jsonPath("$.trainList[0].seatClassList").isEmpty());
 
         // Adjacent stops in the forward direction are sellable.
         mockMvc.perform(get(QUERY)

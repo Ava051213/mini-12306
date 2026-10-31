@@ -56,7 +56,7 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
             ORDER BY installed_rank
             """, String.class);
 
-        assertEquals(List.of("1", "2", "3", "4", "5"), versions);
+        assertEquals(List.of("1", "2", "3", "4", "5", "6"), versions);
 
         Long failedCount = jdbcTemplate.queryForObject("""
             SELECT COUNT(*)
@@ -85,6 +85,7 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
                 "stations",
                 "ticket_inventory",
                 "ticket_orders",
+                "train_trip_interval_prices",
                 "train_trip_stops",
                 "train_trips",
                 "users"
@@ -161,5 +162,49 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
             """, String.class);
 
         assertEquals(List.of("stations", "train_trips"), stopForeignTables);
+
+        // One price per trip, interval and seat type.
+        List<String> priceIndexColumns = jdbcTemplate.queryForList("""
+            SELECT COLUMN_NAME
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'train_trip_interval_prices'
+              AND INDEX_NAME = 'uk_train_trip_interval_prices'
+            ORDER BY SEQ_IN_INDEX
+            """, String.class);
+
+        assertEquals(List.of("train_trip_id", "departure_sequence",
+                "arrival_sequence", "seat_type"), priceIndexColumns);
+
+        // Each composite foreign key contributes one row per column.
+        List<String> priceForeignColumns = jdbcTemplate.queryForList("""
+            SELECT CONCAT(COLUMN_NAME, '->', REFERENCED_COLUMN_NAME)
+            FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'train_trip_interval_prices'
+              AND REFERENCED_TABLE_NAME = 'train_trip_stops'
+            ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION
+            """, String.class);
+
+        assertEquals(List.of(
+                "train_trip_id->train_trip_id",
+                "arrival_sequence->stop_sequence",
+                "train_trip_id->train_trip_id",
+                "departure_sequence->stop_sequence"
+        ), priceForeignColumns);
+
+        List<String> priceChecks = jdbcTemplate.queryForList("""
+            SELECT CONSTRAINT_NAME
+            FROM information_schema.CHECK_CONSTRAINTS
+            WHERE CONSTRAINT_SCHEMA = DATABASE()
+              AND CONSTRAINT_NAME LIKE 'chk_train_trip_interval_prices%'
+            ORDER BY CONSTRAINT_NAME
+            """, String.class);
+
+        assertEquals(List.of(
+                "chk_train_trip_interval_prices_order",
+                "chk_train_trip_interval_prices_price",
+                "chk_train_trip_interval_prices_seat_type"
+        ), priceChecks);
     }
 }

@@ -1,6 +1,7 @@
 package com.mia.mini12306.train;
 
 import com.mia.mini12306.station.mapper.StationQueryMapper;
+import com.mia.mini12306.train.dto.SeatClassResponse;
 import com.mia.mini12306.train.dto.TicketListResponse;
 import com.mia.mini12306.train.dto.TicketQueryRequest;
 import com.mia.mini12306.train.dto.TrainTripSearchRequest;
@@ -8,7 +9,10 @@ import com.mia.mini12306.train.mapper.TrainTripMapper;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class TrainTripService {
@@ -59,12 +63,59 @@ public class TrainTripService {
         LocalDateTime dayStart = request.departureDate().atStartOfDay();
         LocalDateTime nextDayStart = dayStart.plusDays(1);
 
-        // The date belongs to the boarding stop, not to the trip origin.
-        return trainTripMapper.findIntervalsByCodesAndDepartureDay(
-                request.fromStation(),
-                request.toStation(),
-                dayStart,
-                nextDayStart
-        ).stream().map(TicketListResponse::from).toList();
+        List<TrainTripInterval> intervals =
+                trainTripMapper.findIntervalsByCodesAndDepartureDay(
+                        request.fromStation(),
+                        request.toStation(),
+                        dayStart,
+                        nextDayStart
+                );
+
+        // An empty list would build "IN()", which MySQL rejects.
+        if(intervals.isEmpty()) {
+            return List.of();
+        }
+
+        // Group once so assembling stays O(n) and keeps the query order.
+        Map<IntervalKey, List<SeatClassResponse>> pricesByInterval =
+                trainTripMapper.findPricesByIntervals(intervals).stream()
+                        .collect(Collectors.groupingBy(
+                                IntervalKey::of,
+                                Collectors.mapping(
+                                        SeatClassResponse::from,
+                                        Collectors.toList()
+                                )
+                        ));
+
+        return intervals.stream()
+                .map(interval -> TicketListResponse.from(
+                        interval,
+                        pricesByInterval.getOrDefault(
+                                IntervalKey.of(interval), List.of()
+                        )
+                )).toList();
+    }
+
+    // Same three columns as the unique key, so lookups never mix trips up.
+    private record IntervalKey(
+            Long trainTripId,
+            Integer departureSequence,
+            Integer arrivalSequence
+    ) {
+        static IntervalKey of(TrainTripInterval interval) {
+            return new IntervalKey(
+                    interval.getTrainTripId(),
+                    interval.getDepartureSequence(),
+                    interval.getArrivalSequence()
+            );
+        }
+
+        static IntervalKey of(TrainTripIntervalPrice price) {
+            return new IntervalKey(
+                    price.getTrainTripId(),
+                    price.getDepartureSequence(),
+                    price.getArrivalSequence()
+            );
+        }
     }
 }
