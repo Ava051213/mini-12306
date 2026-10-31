@@ -1,5 +1,6 @@
 package com.mia.mini12306.station.mapper;
 
+import com.mia.mini12306.station.RouteBoundaryStop;
 import com.mia.mini12306.station.Station;
 import com.mia.mini12306.station.TrainTripStopRow;
 import org.apache.ibatis.annotations.Mapper;
@@ -46,5 +47,29 @@ public interface StationQueryMapper {
     int countByCodes(
             @Param("fromCode") String fromCode,
             @Param("toCode") String toCode
+    );
+
+    // Only the two ends of the route; a single-stop trip returns one row.
+    @Select("""
+            SELECT s.stop_sequence AS stopSequence,
+                   st.code AS stationCode,
+                   st.name AS stationName,
+                   s.arrival_at AS arrivalAt,
+                   s.departure_at AS departureAt
+            FROM train_trip_stops s
+            JOIN stations st ON st.id = s.station_id
+            WHERE s.train_trip_id = #{trainTripId}
+              AND s.stop_sequence IN (
+                  (SELECT MIN(stop_sequence)
+                   FROM train_trip_stops
+                   WHERE train_trip_id = #{trainTripId}),
+                  (SELECT MAX(stop_sequence)
+                   FROM train_trip_stops
+                   WHERE train_trip_id = #{trainTripId})
+              )
+            ORDER BY s.stop_sequence
+            """)
+    List<RouteBoundaryStop> findRouteBoundaryStops(
+            @Param("trainTripId") Long trainTripId
     );
 }

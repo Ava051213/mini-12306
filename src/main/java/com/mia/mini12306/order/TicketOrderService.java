@@ -6,6 +6,7 @@ import com.mia.mini12306.inventory.mapper.TicketInventoryMapper;
 import com.mia.mini12306.order.dto.OrderCreateRequest;
 import com.mia.mini12306.order.dto.OrderPageResponse;
 import com.mia.mini12306.order.dto.OrderResponse;
+import com.mia.mini12306.order.dto.PricedOrderCreateRequest;
 import com.mia.mini12306.order.mapper.OrderIdempotencyMapper;
 import com.mia.mini12306.order.mapper.TicketOrderMapper;
 import com.mia.mini12306.passenger.Passenger;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class TicketOrderService {
@@ -24,19 +26,22 @@ public class TicketOrderService {
     private final TicketInventoryMapper ticketInventoryMapper;
     private final TicketOrderMapper ticketOrderMapper;
     private final OrderIdempotencyMapper orderIdempotencyMapper;
+    private final OrderPricingService orderPricingService;
 
     public TicketOrderService(
             PassengerService passengerService,
             TicketInventoryService ticketInventoryService,
             TicketInventoryMapper ticketInventoryMapper,
             TicketOrderMapper ticketOrderMapper,
-            OrderIdempotencyMapper OrderIdempotencyMapper
+            OrderIdempotencyMapper OrderIdempotencyMapper,
+            OrderPricingService orderPricingService
     ) {
         this.passengerService = passengerService;
         this.ticketInventoryService = ticketInventoryService;
         this.ticketInventoryMapper = ticketInventoryMapper;
         this.ticketOrderMapper = ticketOrderMapper;
         this.orderIdempotencyMapper = OrderIdempotencyMapper;
+        this.orderPricingService = orderPricingService;
     }
 
     @Transactional
@@ -45,88 +50,22 @@ public class TicketOrderService {
             String idempotencyKey,
             OrderCreateRequest request
     ) {
-        // Serialize requests with the same account and key.
-        orderIdempotencyMapper.reserve(
-                userId,
-                idempotencyKey,
-                request.trainTripId(),
-                request.passengerId()
+        return createInternal(
+                userId, idempotencyKey, PurchaseMode.LEGACY,
+                request.trainTripId(), request.passengerId(), null
         );
+    }
 
-        OrderIdempotency idempotency = orderIdempotencyMapper.findForUpdate(
-                userId, idempotencyKey
+    @Transactional
+    public OrderCreateResult createPriced(
+            Long userId,
+            String idempotencyKey,
+            PricedOrderCreateRequest request
+    ) {
+        return createInternal(
+                userId, idempotencyKey, PurchaseMode.PRICED,
+                request.trainTripId(), request.passengerId(), request.seatType()
         );
-
-        if(idempotency == null) {
-            throw new IllegalStateException("Idempotency record could not be loaded");
-        }
-
-        // Compare the original parameters before checking current business state.
-        if(!idempotency.trainTripId().equals(request.trainTripId())
-                || !idempotency.passengerId().equals(request.passengerId())) {
-            throw new IdempotencyKeyConflictException();
-        }
-
-        if(idempotency.orderId() != null) {
-            // Return the existing order without changing stock.
-            TicketOrder existing = ticketOrderMapper.findByIdAndUserIdForUpdate(
-                    idempotency.orderId(), userId
-            );
-
-            if(existing == null) {
-                throw new IllegalStateException("Idempotent order could not be loaded");
-            }
-
-            return new OrderCreateResult(existing, false);
-        }
-
-        // Verify ownership before changing stock.
-        Passenger passenger = passengerService.findById(
-                userId, request.passengerId()
-        );
-
-        ticketInventoryService.findByTrainTripId(request.trainTripId());
-
-        // Only the conditional update decides whether stock is available.
-        int affectedRows = ticketInventoryMapper.decrementIfAvailable(
-                request.trainTripId()
-        );
-
-        if(affectedRows == 0) {
-            throw new InsufficientTicketsException();
-        }
-
-        // Build trusted order data on the server.
-        TicketOrder order = new TicketOrder();
-        order.setUserId(userId);
-        order.setTrainTripId(request.trainTripId());
-        order.setPassengerId(passenger.getId());
-        order.setPassengerName(passenger.getRealName());
-        order.setPassengerIdCard(passenger.getIdCard());
-        order.setStatus(OrderStatus.PENDING_PAYMENT);
-
-        if(ticketOrderMapper.insert(order) != 1) {
-            throw new IllegalStateException("Order insert failed");
-        }
-
-        TicketOrder saved = ticketOrderMapper.findByIdAndUserId(
-                order.getId(), userId
-        );
-
-        if(saved == null) {
-            throw new IllegalStateException("Created order could not be loaded");
-        }
-
-        // Commit the mapping together with the order and stock decrease.
-        int attachedRows = orderIdempotencyMapper.attachOrder(
-                userId, idempotencyKey, saved.getId()
-        );
-
-        if(attachedRows != 1) {
-            throw new IllegalStateException("Idempotency order association failed");
-        }
-
-        return new OrderCreateResult(saved, true);
     }
 
     public OrderPageResponse findPage(Long userId, int page, int size) {
@@ -146,11 +85,7 @@ public class TicketOrderService {
         long totalPages = total / size + (total % size == 0 ? 0 : 1);
 
         return new OrderPageResponse(
-                items,
-                page,
-                size,
-                total,
-                totalPages
+                items, page, size, total, totalPages
         );
     }
 
@@ -258,5 +193,113 @@ public class TicketOrderService {
         }
 
         return order;
+    }
+
+    private OrderCreateResult createInternal(
+            Long userId,
+            String idempotencyKey,
+            PurchaseMode purchaseMode,
+            Long trainTripId,
+            Long passengerId,
+            Integer seatType
+    ) {
+        // Serialize requests with the same account and key.
+        orderIdempotencyMapper.reserve(
+                userId, idempotencyKey, purchaseMode,
+                trainTripId, passengerId, seatType
+        );
+
+        OrderIdempotency idempotency = orderIdempotencyMapper.findForUpdate(
+                userId, idempotencyKey
+        );
+
+        if(idempotency == null) {
+            throw new IllegalStateException("Idempotency record could not be loaded");
+        }
+
+        // Compare the request including the mode and seat type.
+        if(idempotency.purchaseMode() != purchaseMode
+                || !idempotency.trainTripId().equals(trainTripId)
+                || !idempotency.passengerId().equals(passengerId)
+                || !Objects.equals(idempotency.seatType(), seatType)) {
+            throw new IdempotencyKeyConflictException();
+        }
+
+        if(idempotency.orderId() != null) {
+            // Return the stored order without repricing or stock changes.
+            TicketOrder existing = ticketOrderMapper.findByIdAndUserIdForUpdate(
+                    idempotency.orderId(), userId
+            );
+
+            if (existing == null) {
+                throw new IllegalStateException("Idempotent order could not be loaded");
+            }
+
+            return new OrderCreateResult(existing, false);
+        }
+
+        // Verify ownership before changing stock.
+        Passenger passenger = passengerService.findById(userId, passengerId);
+
+        // Read the fare before touching stock; a failure changes nothing.
+        OrderPriceSnapshot snapshot = purchaseMode == PurchaseMode.PRICED
+                ? orderPricingService.price(trainTripId, seatType)
+                : null;
+
+        ticketInventoryService.findByTrainTripId(trainTripId);
+
+        // Only the conditional update decides whether stock is available.
+        int affectedRows = ticketInventoryMapper.decrementIfAvailable(trainTripId);
+
+        if(affectedRows == 0) {
+            throw new InsufficientTicketsException();
+        }
+
+        // Build trusted order data on the server.
+        TicketOrder order = new TicketOrder();
+        order.setUserId(userId);
+        order.setTrainTripId(trainTripId);
+        order.setPassengerId(passenger.getId());
+        order.setPassengerName(passenger.getRealName());
+        order.setPassengerIdCard(passenger.getIdCard());
+        order.setStatus(OrderStatus.PENDING_PAYMENT);
+        order.setPurchaseMode(purchaseMode);
+
+        if(snapshot != null) {
+            // Persist exactly what was read, never a client amount.
+            order.setDepartureSequence(snapshot.departureSequence());
+            order.setArrivalSequence(snapshot.arrivalSequence());
+            order.setDepartureStationCode(snapshot.departureStationCode());
+            order.setDepartureStationName(snapshot.departureStationName());
+            order.setDepartureAt(snapshot.departureAt());
+            order.setArrivalStationCode(snapshot.arrivalStationCode());
+            order.setArrivalStationName(snapshot.arrivalStationName());
+            order.setArrivalAt(snapshot.arrivalAt());
+            order.setSeatType(snapshot.seatType());
+            order.setAmountCents(snapshot.amountCents());
+        }
+
+        if(ticketOrderMapper.insert(order) != 1) {
+            throw new IllegalStateException("Order insert failed");
+        }
+
+        TicketOrder saved = ticketOrderMapper.findByIdAndUserId(
+                order.getId(), userId
+        );
+
+        if(saved == null) {
+            throw new IllegalStateException("Created order could not be loaded");
+        }
+
+        // Commit the mapping together with the order and stock decrease.
+        int attachedRows = orderIdempotencyMapper.attachOrder(
+                userId, idempotencyKey, saved.getId()
+        );
+
+        if(attachedRows != 1) {
+            throw new IllegalStateException("Idempotency order association failed");
+        }
+
+        return new OrderCreateResult(saved, true);
     }
 }

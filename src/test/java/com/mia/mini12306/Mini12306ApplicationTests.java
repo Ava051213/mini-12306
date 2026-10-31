@@ -56,7 +56,7 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
             ORDER BY installed_rank
             """, String.class);
 
-        assertEquals(List.of("1", "2", "3", "4", "5", "6"), versions);
+        assertEquals(List.of("1", "2", "3", "4", "5", "6", "7"), versions);
 
         Long failedCount = jdbcTemplate.queryForObject("""
             SELECT COUNT(*)
@@ -206,5 +206,72 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
                 "chk_train_trip_interval_prices_price",
                 "chk_train_trip_interval_prices_seat_type"
         ), priceChecks);
+    }
+
+    @Test
+    void shouldConstrainOrderPriceSnapshot() {
+        // Priced orders must carry the full snapshot; legacy rows must not.
+        List<String> orderChecks = jdbcTemplate.queryForList("""
+        SELECT CONSTRAINT_NAME
+        FROM information_schema.CHECK_CONSTRAINTS
+        WHERE CONSTRAINT_SCHEMA = DATABASE()
+          AND CONSTRAINT_NAME LIKE 'chk_ticket_orders_%'
+        ORDER BY CONSTRAINT_NAME
+        """, String.class);
+
+        assertEquals(List.of(
+                "chk_ticket_orders_amount",
+                "chk_ticket_orders_legacy_snapshot",
+                "chk_ticket_orders_priced_snapshot",
+                "chk_ticket_orders_purchase_mode",
+                "chk_ticket_orders_seat_type",
+                "chk_ticket_orders_sequence_order"
+        ), orderChecks);
+
+        List<String> idempotencyChecks = jdbcTemplate.queryForList("""
+        SELECT CONSTRAINT_NAME
+        FROM information_schema.CHECK_CONSTRAINTS
+        WHERE CONSTRAINT_SCHEMA = DATABASE()
+          AND CONSTRAINT_NAME LIKE 'chk_order_idempotency_%'
+        ORDER BY CONSTRAINT_NAME
+        """, String.class);
+
+        assertEquals(List.of(
+                "chk_order_idempotency_legacy_seat",
+                "chk_order_idempotency_priced_seat",
+                "chk_order_idempotency_purchase_mode",
+                "chk_order_idempotency_seat_type"
+        ), idempotencyChecks);
+
+        // Only the discriminator is mandatory on each table.
+        List<String> orderRequired = jdbcTemplate.queryForList("""
+        SELECT COLUMN_NAME
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'ticket_orders'
+          AND COLUMN_NAME IN (
+              'purchase_mode', 'departure_sequence', 'arrival_sequence',
+              'departure_station_code', 'departure_station_name',
+              'departure_at', 'arrival_station_code',
+              'arrival_station_name', 'arrival_at',
+              'seat_type', 'amount_cents'
+          )
+          AND IS_NULLABLE = 'NO'
+        ORDER BY COLUMN_NAME
+        """, String.class);
+
+        assertEquals(List.of("purchase_mode"), orderRequired);
+
+        List<String> idempotencyRequired = jdbcTemplate.queryForList("""
+        SELECT COLUMN_NAME
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'order_idempotency'
+          AND COLUMN_NAME IN ('purchase_mode', 'seat_type')
+          AND IS_NULLABLE = 'NO'
+        ORDER BY COLUMN_NAME
+        """, String.class);
+
+        assertEquals(List.of("purchase_mode"), idempotencyRequired);
     }
 }

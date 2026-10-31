@@ -3,10 +3,7 @@ package com.mia.mini12306.order.controller;
 import com.mia.mini12306.order.OrderCreateResult;
 import com.mia.mini12306.order.TicketOrder;
 import com.mia.mini12306.order.TicketOrderService;
-import com.mia.mini12306.order.dto.OrderCreateRequest;
-import com.mia.mini12306.order.dto.OrderCreateResponse;
-import com.mia.mini12306.order.dto.OrderPageResponse;
-import com.mia.mini12306.order.dto.OrderResponse;
+import com.mia.mini12306.order.dto.*;
 import com.mia.mini12306.user.CurrentUserSession;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -50,6 +47,30 @@ public class TicketOrderController {
         );
 
         // Select the HTTP status without exposing the internal result.
+        HttpStatus status = result.created()
+                ? HttpStatus.CREATED
+                : HttpStatus.OK;
+
+        return ResponseEntity.status(status)
+                .body(OrderCreateResponse.from(result.order()));
+    }
+
+    @PostMapping("/priced")
+    public ResponseEntity<OrderCreateResponse> createPriced(
+            @RequestHeader("Idempotency-Key")
+            @Pattern(regexp = "[A-Za-z0-9_-]{1,64}")
+            String idempotencyKey,
+
+            @Valid @RequestBody PricedOrderCreateRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        // The server decides the price; the body carries no amount.
+        Long userId = currentUserSession.requireUser(httpRequest).id();
+
+        OrderCreateResult result = ticketOrderService.createPriced(
+                userId, idempotencyKey, request
+        );
+
         HttpStatus status = result.created()
                 ? HttpStatus.CREATED
                 : HttpStatus.OK;

@@ -92,4 +92,33 @@ public interface TrainTripMapper {
     List<TrainTripIntervalPrice> findPricesByIntervals(
             @Param("intervals") List<TrainTripInterval> intervals
     );
+
+    // Load the trip itself so pricing can compare its endpoints with the stops.
+    @Select("""
+            SELECT id,
+                   train_number AS trainNumber,
+                   departure_station AS departureStation,
+                   arrival_station AS arrivalStation,
+                   departure_at AS departureAt,
+                   arrival_at AS arrivalAt
+            FROM train_trips
+            WHERE id = #{id}
+            """)
+    TrainTrip findById(@Param("id") Long id);
+
+    // Exact match on the same four columns as the price unique key.
+    @Select("""
+            SELECT price_cents
+            FROM train_trip_interval_prices
+            WHERE train_trip_id = #{trainTripId}
+              AND departure_sequence = #{departureSequence}
+              AND arrival_sequence = #{arrivalSequence}
+              AND seat_type = #{seatType}
+            """)
+    Integer findSeatPrice(
+            @Param("trainTripId") Long trainTripId,
+            @Param("departureSequence") int departureSequence,
+            @Param("arrivalSequence") int arrivalSequence,
+            @Param("seatType") int seatType
+    );
 }

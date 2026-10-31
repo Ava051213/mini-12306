@@ -2,9 +2,11 @@ package com.mia.mini12306.common.web;
 
 import com.mia.mini12306.inventory.InsufficientTicketsException;
 import com.mia.mini12306.inventory.TicketInventoryNotFoundException;
+import com.mia.mini12306.order.FullRouteStopsIncompleteException;
 import com.mia.mini12306.order.IdempotencyKeyConflictException;
 import com.mia.mini12306.order.OrderNotFoundException;
 import com.mia.mini12306.order.OrderStateConflictException;
+import com.mia.mini12306.order.FullRoutePriceNotConfiguredException;
 import com.mia.mini12306.passenger.PassengerAlreadyExistsException;
 import com.mia.mini12306.passenger.PassengerInUseException;
 import com.mia.mini12306.passenger.PassengerNotFoundException;
@@ -68,7 +70,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             PassengerInUseException.class,
             InsufficientTicketsException.class,
             OrderStateConflictException.class,
-            IdempotencyKeyConflictException.class
+            IdempotencyKeyConflictException.class,
+            FullRouteStopsIncompleteException.class,
+            FullRoutePriceNotConfiguredException.class
     })
     @ResponseStatus(HttpStatus.CONFLICT)
     public ErrorResponse handleConflict(RuntimeException exception) {

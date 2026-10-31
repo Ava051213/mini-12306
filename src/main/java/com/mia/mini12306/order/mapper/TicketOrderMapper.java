@@ -13,12 +13,22 @@ public interface TicketOrderMapper {
     @Insert("""
             INSERT INTO ticket_orders (
                 user_id, train_trip_id, passenger_id,
-                passenger_name, passenger_id_card, status, pay_deadline
+                passenger_name, passenger_id_card, status, pay_deadline,
+                purchase_mode,
+                departure_sequence, arrival_sequence,
+                departure_station_code, departure_station_name, departure_at,
+                arrival_station_code, arrival_station_name, arrival_at,
+                seat_type, amount_cents
             )
             VALUES (
                 #{userId}, #{trainTripId}, #{passengerId},
                 #{passengerName}, #{passengerIdCard}, #{status},
-                DATE_ADD(NOW(), INTERVAL 30 MINUTE)
+                DATE_ADD(NOW(), INTERVAL 30 MINUTE),
+                #{purchaseMode},
+                #{departureSequence}, #{arrivalSequence},
+                #{departureStationCode}, #{departureStationName}, #{departureAt},
+                #{arrivalStationCode}, #{arrivalStationName}, #{arrivalAt},
+                #{seatType}, #{amountCents}
             )
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
@@ -33,6 +43,17 @@ public interface TicketOrderMapper {
                    passenger_name AS passengerName,
                    passenger_id_card AS passengerIdCard,
                    status,
+                   purchase_mode AS purchaseMode,
+                   departure_sequence AS departureSequence,
+                   arrival_sequence AS arrivalSequence,
+                   departure_station_code AS departureStationCode,
+                   departure_station_name AS departureStationName,
+                   departure_at AS departureAt,
+                   arrival_station_code AS arrivalStationCode,
+                   arrival_station_name AS arrivalStationName,
+                   arrival_at AS arrivalAt,
+                   seat_type AS seatType,
+                   amount_cents AS amountCents,
                    pay_deadline AS payDeadline,
                    created_at AS createdAt,
                    updated_at AS updatedAt
@@ -62,6 +83,17 @@ public interface TicketOrderMapper {
                    passenger_name AS passengerName,
                    passenger_id_card AS passengerIdCard,
                    status,
+                   purchase_mode AS purchaseMode,
+                   departure_sequence AS departureSequence,
+                   arrival_sequence AS arrivalSequence,
+                   departure_station_code AS departureStationCode,
+                   departure_station_name AS departureStationName,
+                   departure_at AS departureAt,
+                   arrival_station_code AS arrivalStationCode,
+                   arrival_station_name AS arrivalStationName,
+                   arrival_at AS arrivalAt,
+                   seat_type AS seatType,
+                   amount_cents AS amountCents,
                    pay_deadline AS payDeadline,
                    created_at AS createdAt,
                    updated_at AS updatedAt
@@ -113,6 +145,17 @@ public interface TicketOrderMapper {
                    passenger_name AS passengerName,
                    passenger_id_card AS passengerIdCard,
                    status,
+                   purchase_mode AS purchaseMode,
+                   departure_sequence AS departureSequence,
+                   arrival_sequence AS arrivalSequence,
+                   departure_station_code AS departureStationCode,
+                   departure_station_name AS departureStationName,
+                   departure_at AS departureAt,
+                   arrival_station_code AS arrivalStationCode,
+                   arrival_station_name AS arrivalStationName,
+                   arrival_at AS arrivalAt,
+                   seat_type AS seatType,
+                   amount_cents AS amountCents,
                    pay_deadline AS payDeadline,
                    created_at AS createdAt,
                    updated_at AS updatedAt
