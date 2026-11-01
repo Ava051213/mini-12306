@@ -47,11 +47,13 @@ class StationQueryIntegrationTests extends DatabaseIntegrationTest {
         insertStation(lastCode, "字典末站" + suffix, "zidianmozhan", "测试地区");
         insertStation(firstCode, "字典首站" + suffix, "zidianshouzhan", "测试地区");
 
-        String body = mockMvc.perform(get(STATION_LIST))
+        MvcResult result = mockMvc.perform(get(STATION_LIST))
                 .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
+                .andReturn();
+
+        assertNull(result.getRequest().getSession(false));
+
+        String body = result.getResponse().getContentAsString();
 
         // The dictionary must already be sorted by the database, not by Java.
         List<String> codes = JsonPath.read(body, "$[*].code");

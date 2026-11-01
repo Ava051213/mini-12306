@@ -1,5 +1,6 @@
 package com.mia.mini12306.station.mapper;
 
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.mia.mini12306.station.RouteBoundaryStop;
 import com.mia.mini12306.station.Station;
 import com.mia.mini12306.station.TrainTripStopRow;
@@ -10,18 +11,7 @@ import org.apache.ibatis.annotations.Select;
 import java.util.List;
 
 @Mapper
-public interface StationQueryMapper {
-
-    @Select("""
-            SELECT id,
-                   code,
-                   name,
-                   spell,
-                   region_name AS regionName
-            FROM stations
-            ORDER BY code
-            """)
-    List<Station> findAllOrderByCode();
+public interface StationQueryMapper extends BaseMapper<Station> {
 
     // Numeric stop order keeps 2 before 10, which string order would break.
     @Select("""

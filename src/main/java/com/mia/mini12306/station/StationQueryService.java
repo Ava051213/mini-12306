@@ -1,5 +1,6 @@
 package com.mia.mini12306.station;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.mia.mini12306.station.dto.StationResponse;
 import com.mia.mini12306.station.dto.TrainStopResponse;
 import com.mia.mini12306.station.mapper.StationQueryMapper;
@@ -23,7 +24,10 @@ public class StationQueryService {
     }
 
     public List<StationResponse> listStations() {
-        return stationQueryMapper.findAllOrderByCode().stream()
+        LambdaQueryWrapper<Station> query = new LambdaQueryWrapper<>();
+        query.orderByAsc(Station::getCode);
+
+        return stationQueryMapper.selectList(query).stream()
                 .map(StationResponse::from)
                 .toList();
     }
