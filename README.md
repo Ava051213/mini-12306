@@ -1,6 +1,6 @@
 # mini-12306
 
-参考 nageoffer/12306，用于学习 Spring Boot、MyBatis、MySQL、事务与并发控制。
+参考 nageoffer/12306，用于学习 Spring Boot、MyBatis / MyBatis-Plus、MySQL、事务与并发控制。
 
 ## 功能与范围
 
@@ -28,6 +28,7 @@
 - Maven 3.9.x（本地使用 3.9.14）
 - Docker 与 Docker Compose
 - Spring Boot 4.0.8
+- MyBatis-Plus 3.5.17（`mybatis-plus-spring-boot4-starter`，保留既有手写 Mapper）
 - MySQL 8.4（由 Compose 启动）
 
 ## 数据库与迁移
@@ -214,6 +215,11 @@ Service 先做归属校验和引用检查以给出明确的 404／409 语义，�
 
 `GET /api/ticket-service/station/all` 返回全部车站，按 `code` 升序，
 元素为 `name`、`code`、`spell`、`regionName`，不返回数据库 id。
+此列表使用 MyBatis-Plus `BaseMapper<Station>` 与 `LambdaQueryWrapper`，
+在数据库按 `code` 升序查询，再转换为响应 DTO。实体映射 `stations`、
+数据库自增主键 `id` 及 `region_name` 列；未开放通用 CRUD 接口。
+本轮只迁移这条字典列表查询，经停 JOIN、站码计数、首末站查询及其他业务手写 SQL 保留。
+
 `GET /api/ticket-service/train-station/query?trainId=...` 返回一个车次的经停顺序，
 `trainId` 对应 `train_trips.id`，即一次带日期的车次运行。
 
