@@ -118,9 +118,9 @@ class TicketPriceIntegrationTests extends DatabaseIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.trainList[0].seatClassList.length()").value(1))
                 .andExpect(jsonPath("$.trainList[0].seatClassList[0].type").value(1))
-                // Quantity and candidate belong to later modules.
+                // No seat rows in this fixture, so nothing is sellable.
                 .andExpect(jsonPath("$.trainList[0].seatClassList[0].quantity")
-                        .doesNotExist())
+                        .value(0))
                 .andExpect(jsonPath("$.trainList[0].seatClassList[0].candidate")
                         .doesNotExist());
     }
