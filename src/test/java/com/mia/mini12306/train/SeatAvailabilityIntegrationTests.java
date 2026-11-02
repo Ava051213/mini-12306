@@ -189,6 +189,68 @@ class SeatAvailabilityIntegrationTests extends DatabaseIntegrationTest {
     ) {
     }
 
+    @Test
+    void shouldNotCombineDifferentSeatsIntoOneFullRoute() throws Exception {
+        ThreeStopTrip trip = createThreeStopTrip(
+                LocalDateTime.of(2027, 7, 8, 8, 0));
+        List<Long> seats = insertSeats(trip.tripId(), 2);
+
+        insertPrice(trip.tripId(), 1, 2, 2, 1000);
+        insertPrice(trip.tripId(), 2, 3, 2, 2000);
+        insertPrice(trip.tripId(), 1, 3, 2, 3000);
+
+        // Seat A is free on the first segment only, seat B on the second only.
+        occupySegment(seats.get(0), 2);
+        occupySegment(seats.get(1), 1);
+
+        assertQuantity(trip, "2027-07-08", 0, 1, 1);
+        assertQuantity(trip, "2027-07-08", 1, 2, 1);
+        // Each segment has a free seat, but no single seat covers both.
+        assertQuantity(trip, "2027-07-08", 0, 2, 0);
+    }
+
+    @Test
+    void shouldUnderCountWhenStopSequencesAreNotContinuous() throws Exception {
+        String suffix = uniqueSuffix();
+        LocalDateTime departure = LocalDateTime.of(2027, 7, 9, 8, 0);
+
+        Long first = insertStation("A" + suffix, "甲站" + suffix);
+        Long second = insertStation("B" + suffix, "乙站" + suffix);
+        Long third = insertStation("C" + suffix, "丙站" + suffix);
+        Long fourth = insertStation("D" + suffix, "丁站" + suffix);
+
+        Long tripId = insertTrip("T" + suffix, "甲站" + suffix, "丁站" + suffix,
+                departure, departure.plusHours(3));
+
+        // Sequences 1, 2, 10, 11 leave a gap between 2 and 10.
+        insertStop(tripId, first, 1, null, departure);
+        insertStop(tripId, second, 2, departure.plusHours(1),
+                departure.plusHours(1).plusMinutes(5));
+        insertStop(tripId, third, 10, departure.plusHours(2),
+                departure.plusHours(2).plusMinutes(5));
+        insertStop(tripId, fourth, 11, departure.plusHours(3), null);
+
+        Long carriageId = insertCarriage(tripId, "01");
+        Long seatId = insertSeat(tripId, carriageId, "01A", 2);
+        insertSegment(tripId, seatId, 1);
+        insertSegment(tripId, seatId, 2);
+        insertSegment(tripId, seatId, 10);
+
+        insertPrice(tripId, 2, 10, 2, 1000);
+
+        // 2 -> 10 is adjacent here, but the span still counts as 8 segments.
+        mockMvc.perform(get(QUERY)
+                        .param("departureDate", "2027-07-09")
+                        .param("fromStation", "B" + suffix)
+                        .param("toStation", "C" + suffix))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.trainList.length()").value(1))
+                .andExpect(jsonPath("$.trainList[0].seatClassList.length()")
+                        .value(1))
+                .andExpect(jsonPath("$.trainList[0].seatClassList[0].quantity")
+                        .value(0));
+    }
+
     // Two segments per seat: [1,2) and [2,3).
     private ThreeStopTrip createThreeStopTrip(LocalDateTime firstDeparture) {
         String suffix = uniqueSuffix();

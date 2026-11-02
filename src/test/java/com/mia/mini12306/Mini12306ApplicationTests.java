@@ -372,5 +372,100 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
         """, String.class);
 
         assertEquals(List.of("purchase_mode"), idempotencyRequired);
+
+        // The two helper unique keys back the composite foreign keys.
+        List<String> carriageTripIndex = jdbcTemplate.queryForList("""
+            SELECT COLUMN_NAME
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'train_carriages'
+              AND INDEX_NAME = 'uk_train_carriages_trip_id'
+            ORDER BY SEQ_IN_INDEX
+            """, String.class);
+
+        assertEquals(List.of("train_trip_id", "id"), carriageTripIndex);
+
+        List<String> seatTripIndex = jdbcTemplate.queryForList("""
+            SELECT COLUMN_NAME
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'train_seats'
+              AND INDEX_NAME = 'uk_train_seats_trip_id'
+            ORDER BY SEQ_IN_INDEX
+            """, String.class);
+
+        assertEquals(List.of("train_trip_id", "id"), seatTripIndex);
+
+        // A unique key degraded into a plain index must be caught.
+        List<String> nonUniqueKeys = jdbcTemplate.queryForList("""
+            SELECT CONCAT(TABLE_NAME, '.', INDEX_NAME)
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND (TABLE_NAME = 'train_carriages'
+                OR TABLE_NAME = 'train_seats'
+                OR TABLE_NAME = 'train_seat_segments')
+              AND INDEX_NAME LIKE 'uk_%'
+              AND NON_UNIQUE = 1
+            """, String.class);
+
+        assertEquals(List.of(), nonUniqueKeys);
+
+        // Composite foreign keys must point at the intended tables.
+        List<String> seatForeignTables = jdbcTemplate.queryForList("""
+            SELECT DISTINCT REFERENCED_TABLE_NAME
+            FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'train_seats'
+              AND REFERENCED_TABLE_NAME IS NOT NULL
+            ORDER BY REFERENCED_TABLE_NAME
+            """, String.class);
+
+        assertEquals(List.of("train_carriages"), seatForeignTables);
+
+        List<String> segmentForeignTables = jdbcTemplate.queryForList("""
+            SELECT DISTINCT REFERENCED_TABLE_NAME
+            FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'train_seat_segments'
+              AND REFERENCED_TABLE_NAME IS NOT NULL
+            ORDER BY REFERENCED_TABLE_NAME
+            """, String.class);
+
+        assertEquals(List.of("train_seats", "train_trip_stops"),
+                segmentForeignTables);
+
+        // A CHECK that exists but is disabled would pass a name-only check.
+        List<String> disabledChecks = jdbcTemplate.queryForList("""
+            SELECT CONSTRAINT_NAME
+            FROM information_schema.TABLE_CONSTRAINTS
+            WHERE CONSTRAINT_SCHEMA = DATABASE()
+              AND TABLE_NAME IN ('train_seats', 'train_seat_segments')
+              AND CONSTRAINT_TYPE = 'CHECK'
+              AND ENFORCED <> 'YES'
+            """, String.class);
+
+        assertEquals(List.of(), disabledChecks);
+
+        // Each CHECK must still mention the column it guards.
+        List<String> checkTargets = jdbcTemplate.queryForList("""
+            SELECT CONCAT(CONSTRAINT_NAME, ':',
+                   CASE
+                       WHEN CHECK_CLAUSE LIKE '%seat_type%' THEN 'seat_type'
+                       WHEN CHECK_CLAUSE LIKE '%segment_sequence%'
+                           THEN 'segment_sequence'
+                       WHEN CHECK_CLAUSE LIKE '%seat_status%' THEN 'seat_status'
+                       ELSE 'unknown'
+                   END)
+            FROM information_schema.CHECK_CONSTRAINTS
+            WHERE CONSTRAINT_SCHEMA = DATABASE()
+              AND CONSTRAINT_NAME LIKE 'chk_train_seat%'
+            ORDER BY CONSTRAINT_NAME
+            """, String.class);
+
+        assertEquals(List.of(
+                "chk_train_seat_segments_sequence:segment_sequence",
+                "chk_train_seat_segments_status:seat_status",
+                "chk_train_seats_seat_type:seat_type"
+        ), checkTargets);
     }
 }
