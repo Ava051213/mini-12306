@@ -76,13 +76,30 @@ public class TrainTripService {
             return List.of();
         }
 
-        // Group once so assembling stays O(n) and keeps the query order.
+        List<TrainTripIntervalPrice> prices = trainTripMapper.findPricesByIntervals(intervals);
+
+        // Nothing to price means nothing to count.
+        Map<SeatKey, Integer> availableBySeat = prices.isEmpty()
+                ? Map.of()
+                : trainTripMapper.findAvailableSeatsByIntervals(intervals)
+                  .stream()
+                  .collect(Collectors.toMap(
+                          SeatKey::of,
+                          TrainSeatAvailability::getAvailableSeats
+                  ));
+
         Map<IntervalKey, List<SeatClassResponse>> pricesByInterval =
-                trainTripMapper.findPricesByIntervals(intervals).stream()
+                prices.stream()
                         .collect(Collectors.groupingBy(
                                 IntervalKey::of,
                                 Collectors.mapping(
-                                        SeatClassResponse::from,
+                                        // No seat rows means nothing sellable.
+                                        price -> SeatClassResponse.from(
+                                                price,
+                                                availableBySeat.getOrDefault(
+                                                        SeatKey.of(price), 0
+                                                )
+                                        ),
                                         Collectors.toList()
                                 )
                         ));
@@ -115,6 +132,32 @@ public class TrainTripService {
                     price.getTrainTripId(),
                     price.getDepartureSequence(),
                     price.getArrivalSequence()
+            );
+        }
+    }
+
+    // Availability is counted per seat type on the same interval.
+    private record SeatKey(
+            Long trainTripId,
+            Integer departureSequence,
+            Integer arrivalSequence,
+            Integer seatType
+    ) {
+        static SeatKey of(TrainTripIntervalPrice price) {
+            return new SeatKey(
+                    price.getTrainTripId(),
+                    price.getDepartureSequence(),
+                    price.getArrivalSequence(),
+                    price.getSeatType()
+            );
+        }
+
+        static SeatKey of(TrainSeatAvailability availability) {
+            return new SeatKey(
+                    availability.getTrainTripId(),
+                    availability.getDepartureSequence(),
+                    availability.getArrivalSequence(),
+                    availability.getSeatType()
             );
         }
     }

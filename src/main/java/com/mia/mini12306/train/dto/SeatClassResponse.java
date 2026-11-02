@@ -6,13 +6,18 @@ import java.math.BigDecimal;
 
 public record SeatClassResponse(
         Integer type,
-        BigDecimal price
+        BigDecimal price,
+        Integer quantity
 ) {
     // Cents to yuan with scale 2; exact, no rounding.
-    public static SeatClassResponse from(TrainTripIntervalPrice row) {
+    public static SeatClassResponse from(
+            TrainTripIntervalPrice row,
+            Integer quantity
+    ) {
         return new SeatClassResponse(
                 row.getSeatType(),
-                BigDecimal.valueOf(row.getPriceCents(), 2)
+                BigDecimal.valueOf(row.getPriceCents(), 2),
+                quantity
         );
     }
 }

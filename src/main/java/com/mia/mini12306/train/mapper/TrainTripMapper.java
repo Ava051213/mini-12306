@@ -1,5 +1,6 @@
 package com.mia.mini12306.train.mapper;
 
+import com.mia.mini12306.train.TrainSeatAvailability;
 import com.mia.mini12306.train.TrainTrip;
 import com.mia.mini12306.train.TrainTripInterval;
 import com.mia.mini12306.train.TrainTripIntervalPrice;
@@ -120,5 +121,46 @@ public interface TrainTripMapper {
             @Param("departureSequence") int departureSequence,
             @Param("arrivalSequence") int arrivalSequence,
             @Param("seatType") int seatType
+    );
+
+    // A seat is sellable only when every segment of the interval is free.
+    @Select("""
+            <script>
+            SELECT free.train_trip_id AS trainTripId,
+                   free.departure_sequence AS departureSequence,
+                   free.arrival_sequence AS arrivalSequence,
+                   free.seat_type AS seatType,
+                   COUNT(*) AS availableSeats
+            FROM(
+                SELECT i.train_trip_id,
+                       i.departure_sequence,
+                       i.arrival_sequence,
+                       s.seat_type,
+                       seg.seat_id
+                FROM(
+                    <foreach collection="intervals" item="interval" separator="UNION ALL">
+                    SELECT #{interval.trainTripId} AS train_trip_id,
+                           #{interval.departureSequence} AS departure_sequence,
+                           #{interval.arrivalSequence} AS arrival_sequence
+                    </foreach>
+                ) i
+                JOIN train_seat_segments seg
+                ON seg.train_trip_id = i.train_trip_id
+                AND seg.segment_sequence >= i.departure_sequence
+                AND seg.segment_sequence &lt; i.arrival_sequence
+                AND seg.seat_status = 'AVAILABLE'
+                JOIN train_seats s ON s.id = seg.seat_id
+                GROUP BY i.train_trip_id, i.departure_sequence,
+                         i.arrival_sequence, s.seat_type, seg.seat_id
+                HAVING COUNT(*) = i.arrival_sequence - i.departure_sequence
+            ) free
+            GROUP BY free.train_trip_id, free.departure_sequence,
+                     free.arrival_sequence, free.seat_type
+            ORDER BY free.train_trip_id, free.departure_sequence,
+                     free.arrival_sequence, free.seat_type
+            </script>
+            """)
+    List<TrainSeatAvailability> findAvailableSeatsByIntervals(
+            @Param("intervals") List<TrainTripInterval> intervals
     );
 }

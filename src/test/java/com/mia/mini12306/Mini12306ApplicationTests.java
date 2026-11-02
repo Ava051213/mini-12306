@@ -56,7 +56,7 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
             ORDER BY installed_rank
             """, String.class);
 
-        assertEquals(List.of("1", "2", "3", "4", "5", "6", "7"), versions);
+        assertEquals(List.of("1", "2", "3", "4", "5", "6", "7", "8"), versions);
 
         Long failedCount = jdbcTemplate.queryForObject("""
             SELECT COUNT(*)
@@ -85,6 +85,9 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
                 "stations",
                 "ticket_inventory",
                 "ticket_orders",
+                "train_carriages",
+                "train_seat_segments",
+                "train_seats",
                 "train_trip_interval_prices",
                 "train_trip_stops",
                 "train_trips",
@@ -206,6 +209,102 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
                 "chk_train_trip_interval_prices_price",
                 "chk_train_trip_interval_prices_seat_type"
         ), priceChecks);
+    }
+
+    @Test
+    void shouldConstrainCarriageAndSeatStructure() {
+        // A carriage number is unique inside one run.
+        List<String> carriageIndex = jdbcTemplate.queryForList("""
+            SELECT COLUMN_NAME
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'train_carriages'
+              AND INDEX_NAME = 'uk_train_carriages_number'
+            ORDER BY SEQ_IN_INDEX
+            """, String.class);
+
+        assertEquals(List.of("train_trip_id", "carriage_number"), carriageIndex);
+
+        // A seat number is unique inside one carriage of one run.
+        List<String> seatIndex = jdbcTemplate.queryForList("""
+            SELECT COLUMN_NAME
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'train_seats'
+              AND INDEX_NAME = 'uk_train_seats_number'
+            ORDER BY SEQ_IN_INDEX
+            """, String.class);
+
+        assertEquals(List.of("train_trip_id", "carriage_id", "seat_number"),
+                seatIndex);
+
+        // One status row per seat and segment.
+        List<String> segmentIndex = jdbcTemplate.queryForList("""
+            SELECT COLUMN_NAME
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'train_seat_segments'
+              AND INDEX_NAME = 'uk_train_seat_segments'
+            ORDER BY SEQ_IN_INDEX
+            """, String.class);
+
+        assertEquals(List.of("train_trip_id", "seat_id", "segment_sequence"),
+                segmentIndex);
+
+        // The seat may only point at a carriage of the same run.
+        List<String> seatForeignColumns = jdbcTemplate.queryForList("""
+            SELECT CONCAT(COLUMN_NAME, '->', REFERENCED_COLUMN_NAME)
+            FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'train_seats'
+              AND REFERENCED_TABLE_NAME IS NOT NULL
+            ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION
+            """, String.class);
+
+        assertEquals(List.of(
+                "train_trip_id->train_trip_id",
+                "carriage_id->id"
+        ), seatForeignColumns);
+
+        // The segment must belong to this run and start at a real stop.
+        List<String> segmentForeignColumns = jdbcTemplate.queryForList("""
+            SELECT CONCAT(COLUMN_NAME, '->', REFERENCED_COLUMN_NAME)
+            FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'train_seat_segments'
+              AND REFERENCED_TABLE_NAME IS NOT NULL
+            ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION
+            """, String.class);
+
+        assertEquals(List.of(
+                "train_trip_id->train_trip_id",
+                "seat_id->id",
+                "train_trip_id->train_trip_id",
+                "segment_sequence->stop_sequence"
+        ), segmentForeignColumns);
+
+        List<String> seatChecks = jdbcTemplate.queryForList("""
+            SELECT CONSTRAINT_NAME
+            FROM information_schema.CHECK_CONSTRAINTS
+            WHERE CONSTRAINT_SCHEMA = DATABASE()
+              AND CONSTRAINT_NAME LIKE 'chk_train_seats%'
+            ORDER BY CONSTRAINT_NAME
+            """, String.class);
+
+        assertEquals(List.of("chk_train_seats_seat_type"), seatChecks);
+
+        List<String> segmentChecks = jdbcTemplate.queryForList("""
+            SELECT CONSTRAINT_NAME
+            FROM information_schema.CHECK_CONSTRAINTS
+            WHERE CONSTRAINT_SCHEMA = DATABASE()
+              AND CONSTRAINT_NAME LIKE 'chk_train_seat_segments%'
+            ORDER BY CONSTRAINT_NAME
+            """, String.class);
+
+        assertEquals(List.of(
+                "chk_train_seat_segments_sequence",
+                "chk_train_seat_segments_status"
+        ), segmentChecks);
     }
 
     @Test
