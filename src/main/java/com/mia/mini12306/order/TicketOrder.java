@@ -33,6 +33,11 @@ public class TicketOrder {
     private Integer seatType;
     private Integer amountCents;
 
+    // Seat snapshot; null for orders that never bought a concrete seat.
+    private Long seatId;
+    private String carriageNumber;
+    private String seatNumber;
+
     private OrderStatus status;
     // Deadline decides whether the order may still be paid.
     private LocalDateTime payDeadline;

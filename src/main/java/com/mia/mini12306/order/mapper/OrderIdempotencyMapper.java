@@ -11,11 +11,13 @@ public interface OrderIdempotencyMapper {
     @Insert("""
             INSERT INTO order_idempotency (
                 user_id, idempotency_key, purchase_mode,
-                train_trip_id, passenger_id, seat_type
+                train_trip_id, passenger_id, seat_type,
+                departure_station_code, arrival_station_code
             )
             VALUES (
                 #{userId}, #{idempotencyKey}, #{purchaseMode},
-                #{trainTripId}, #{passengerId}, #{seatType}
+                #{trainTripId}, #{passengerId}, #{seatType},
+                #{departureStationCode}, #{arrivalStationCode}
             )
             ON DUPLICATE KEY UPDATE
                 idempotency_key = idempotency_key
@@ -26,7 +28,9 @@ public interface OrderIdempotencyMapper {
             @Param("purchaseMode") PurchaseMode purchaseMode,
             @Param("trainTripId") Long trainTripId,
             @Param("passengerId") Long passengerId,
-            @Param("seatType") Integer seatType
+            @Param("seatType") Integer seatType,
+            @Param("departureStationCode") String departureStationCode,
+            @Param("arrivalStationCode") String arrivalStationCode
     );
 
     // Read the latest record while holding its lock until transaction completion.
@@ -37,6 +41,8 @@ public interface OrderIdempotencyMapper {
                    train_trip_id AS trainTripId,
                    passenger_id AS passengerId,
                    seat_type AS seatType,
+                   departure_station_code AS departureStationCode,
+                   arrival_station_code AS arrivalStationCode,
                    order_id AS orderId
             FROM order_idempotency
             WHERE user_id = #{userId}

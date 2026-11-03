@@ -1,7 +1,7 @@
 package com.mia.mini12306.order.controller;
 
 import com.mia.mini12306.order.OrderCreateResult;
-import com.mia.mini12306.order.TicketOrder;
+import com.mia.mini12306.order.SeatOrderService;
 import com.mia.mini12306.order.TicketOrderService;
 import com.mia.mini12306.order.dto.*;
 import com.mia.mini12306.user.CurrentUserSession;
@@ -20,13 +20,16 @@ import org.springframework.web.bind.annotation.*;
 public class TicketOrderController {
 
     private final TicketOrderService ticketOrderService;
+    private final SeatOrderService seatOrderService;
     private final CurrentUserSession currentUserSession;
 
     public TicketOrderController(
             TicketOrderService ticketOrderService,
+            SeatOrderService seatOrderService,
             CurrentUserSession currentUserSession
     ) {
         this.ticketOrderService = ticketOrderService;
+        this.seatOrderService = seatOrderService;
         this.currentUserSession = currentUserSession;
     }
 
@@ -131,5 +134,29 @@ public class TicketOrderController {
         return OrderResponse.from(
                 ticketOrderService.cancel(userId, id)
         );
+    }
+
+    @PostMapping("/seat")
+    public ResponseEntity<OrderCreateResponse> createSeat(
+            @RequestHeader("Idempotency-Key")
+            @Pattern(regexp = "[A-Za-z0-9_-]{1,64}")
+            String idempotencyKey,
+
+            @Valid @RequestBody SeatOrderCreateRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        // The body never carries an amount or a seat number.
+        Long userId = currentUserSession.requireUser(httpRequest).id();
+
+        OrderCreateResult result = seatOrderService.create(
+                userId, idempotencyKey, request
+        );
+
+        HttpStatus status = result.created()
+                ? HttpStatus.CREATED
+                : HttpStatus.OK;
+
+        return ResponseEntity.status(status)
+                .body(OrderCreateResponse.from(result.order()));
     }
 }

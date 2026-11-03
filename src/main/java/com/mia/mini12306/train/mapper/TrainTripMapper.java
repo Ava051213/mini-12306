@@ -163,4 +163,13 @@ public interface TrainTripMapper {
     List<TrainSeatAvailability> findAvailableSeatsByIntervals(
             @Param("intervals") List<TrainTripInterval> intervals
     );
+
+    // Hold the run while the sales mode is checked or a purchase is built.
+    @Select("""
+            SELECT sales_mode
+            FROM train_trips
+            WHERE id = #{id}
+            FOR UPDATE
+            """)
+    String findSalesModeForUpdate(@Param("id") Long id);
 }

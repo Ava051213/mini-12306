@@ -1,6 +1,7 @@
 package com.mia.mini12306.order;
 
 import com.mia.mini12306.inventory.InsufficientTicketsException;
+import com.mia.mini12306.inventory.SeatAllocationService;
 import com.mia.mini12306.inventory.TicketInventoryService;
 import com.mia.mini12306.inventory.mapper.TicketInventoryMapper;
 import com.mia.mini12306.order.dto.OrderCreateRequest;
@@ -11,7 +12,7 @@ import com.mia.mini12306.order.mapper.OrderIdempotencyMapper;
 import com.mia.mini12306.order.mapper.TicketOrderMapper;
 import com.mia.mini12306.passenger.Passenger;
 import com.mia.mini12306.passenger.PassengerService;
-import org.springframework.core.annotation.Order;
+import com.mia.mini12306.train.mapper.TrainTripMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +28,8 @@ public class TicketOrderService {
     private final TicketOrderMapper ticketOrderMapper;
     private final OrderIdempotencyMapper orderIdempotencyMapper;
     private final OrderPricingService orderPricingService;
+    private final TrainTripMapper trainTripMapper;
+    private final SeatAllocationService seatAllocationService;
 
     public TicketOrderService(
             PassengerService passengerService,
@@ -34,7 +37,9 @@ public class TicketOrderService {
             TicketInventoryMapper ticketInventoryMapper,
             TicketOrderMapper ticketOrderMapper,
             OrderIdempotencyMapper OrderIdempotencyMapper,
-            OrderPricingService orderPricingService
+            OrderPricingService orderPricingService,
+            TrainTripMapper trainTripMapper,
+            SeatAllocationService seatAllocationService
     ) {
         this.passengerService = passengerService;
         this.ticketInventoryService = ticketInventoryService;
@@ -42,6 +47,8 @@ public class TicketOrderService {
         this.ticketOrderMapper = ticketOrderMapper;
         this.orderIdempotencyMapper = OrderIdempotencyMapper;
         this.orderPricingService = orderPricingService;
+        this.trainTripMapper = trainTripMapper;
+        this.seatAllocationService = seatAllocationService;
     }
 
     @Transactional
@@ -145,16 +152,7 @@ public class TicketOrderService {
             throw new OrderStateConflictException("当前订单状态不允许取消");
         }
 
-        // Restore stock only for the request that changed the order state.
-        int restoredRows = ticketInventoryMapper.restoreOneIfNotFull(
-                order.getTrainTripId()
-        );
-
-        if(restoredRows != 1) {
-            // Roll back the order transition if stock cannot be restored.
-            throw new IllegalStateException("Cancelled order inventory could not be restored");
-        }
-
+        release(order);
         return order;
     }
 
@@ -168,19 +166,13 @@ public class TicketOrderService {
             return false;
         }
 
-        Long trainTripId = ticketOrderMapper.findTrainTripIdById(orderId);
+        OrderReleaseTarget target = ticketOrderMapper.findReleaseTargetById(orderId);
 
-        if(trainTripId == null) {
+        if(target == null) {
             throw new IllegalStateException("Expired order could not be loaded");
         }
 
-        int restoredRows = ticketInventoryMapper.restoreOneIfNotFull(trainTripId);
-
-        if(restoredRows != 1) {
-            // Roll back the status change if stock cannot be restored.
-            throw new IllegalStateException("Expired order inventory could not be restored");
-        }
-
+        release(target);
         return true;
     }
 
@@ -204,9 +196,11 @@ public class TicketOrderService {
             Integer seatType
     ) {
         // Serialize requests with the same account and key.
+        // Old entries never carry station codes.
         orderIdempotencyMapper.reserve(
                 userId, idempotencyKey, purchaseMode,
-                trainTripId, passengerId, seatType
+                trainTripId, passengerId, seatType,
+                null, null
         );
 
         OrderIdempotency idempotency = orderIdempotencyMapper.findForUpdate(
@@ -236,6 +230,14 @@ public class TicketOrderService {
             }
 
             return new OrderCreateResult(existing, false);
+        }
+
+        // A run sells either quantity stock or concrete seats, never both
+        // A missing run keeps the historical downstream error unchanged.
+        String salesMode = trainTripMapper.findSalesModeForUpdate(trainTripId);
+
+        if("SEAT".equals(salesMode)) {
+            throw SeatSalesModeConflictException.seatSalesEnabled();
         }
 
         // Verify ownership before changing stock.
@@ -301,5 +303,55 @@ public class TicketOrderService {
         }
 
         return new OrderCreateResult(saved, true);
+    }
+
+    private void release(TicketOrder order) {
+        release(
+                order.getPurchaseMode(),
+                order.getId(),
+                order.getTrainTripId(),
+                order.getDepartureSequence(),
+                order.getArrivalSequence(),
+                "Cancelled order inventory could not be restored"
+        );
+    }
+
+    private void release(OrderReleaseTarget target) {
+        release(
+                target.purchaseMode(),
+                target.id(),
+                target.trainTripId(),
+                target.departureSequence(),
+                target.arrivalSequence(),
+                "Expired order inventory could not be restored"
+        );
+    }
+
+    private void release(
+            PurchaseMode purchaseMode,
+            Long orderId,
+            Long trainTripId,
+            Integer departureSequence,
+            Integer arrivalSequence,
+            String failureMessage
+    ) {
+        if(purchaseMode == PurchaseMode.SEAT) {
+            if(departureSequence == null || arrivalSequence == null) {
+                throw new IllegalStateException("Seat order snapshot is incomplete");
+            }
+
+            // Release exactly the segments this order owns.
+            seatAllocationService.release(
+                    orderId, departureSequence, arrivalSequence
+            );
+            return;
+        }
+
+        // Legacy and priced orders only ever held quantity stock.
+        int restoredRows = ticketInventoryMapper.restoreOneIfNotFull(trainTripId);
+
+        if(restoredRows != 1) {
+            throw new IllegalStateException(failureMessage);
+        }
     }
 }

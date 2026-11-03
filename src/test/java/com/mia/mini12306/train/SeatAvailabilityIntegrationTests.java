@@ -11,6 +11,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -22,12 +23,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class SeatAvailabilityIntegrationTests extends DatabaseIntegrationTest {
 
     private static final String QUERY = "/api/ticket-service/ticket/query";
+    private static final String FIXTURE_ID_CARD = "000000000000000001";
 
     @Autowired
     private MockMvc mockMvc;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    // V9 requires every occupied segment to point at an order.
+    private Long fixtureUserId;
+    private Long fixturePassengerId;
 
     @Test
     void shouldRequireEverySegmentOfTheInterval() throws Exception {
@@ -151,8 +157,14 @@ class SeatAvailabilityIntegrationTests extends DatabaseIntegrationTest {
         DataAccessException status = assertThrows(
                 DataAccessException.class,
                 () -> insertSegment(trip.tripId(), seatId, 2, "LOCKED"));
-        assertTrue(status.getMessage()
-                .contains("chk_train_seat_segments_status"));
+
+        // A locked row breaks both the status list and the owner pairing,
+        // so MySQL may report either segment check first.
+        assertTrue(
+                status.getMessage().contains("chk_train_seat_segments_status")
+                        || status.getMessage()
+                        .contains("chk_train_seat_segments_order")
+        );
 
         // The segment start must be a real stop of this run.
         DataAccessException stop = assertThrows(
@@ -358,11 +370,122 @@ class SeatAvailabilityIntegrationTests extends DatabaseIntegrationTest {
     }
 
     private void occupySegment(Long seatId, int segmentSequence) {
+        Long trainTripId = jdbcTemplate.queryForObject("""
+                SELECT train_trip_id FROM train_seats WHERE id = ?
+                """, Long.class, seatId);
+
+        // Every occupied row needs an owner, so build one for the interval.
+        Long orderId = createFixtureOrder(
+                trainTripId, seatId, segmentSequence, segmentSequence + 1);
+
         jdbcTemplate.update("""
                 UPDATE train_seat_segments
-                SET seat_status = 'OCCUPIED'
+                SET seat_status = 'OCCUPIED',
+                    order_id = ?
                 WHERE seat_id = ? AND segment_sequence = ?
-                """, seatId, segmentSequence);
+                """, orderId, seatId, segmentSequence);
+    }
+
+    private Long createFixtureOrder(
+            Long trainTripId,
+            Long seatId,
+            int fromSequence,
+            int toSequence
+    ) {
+        ensureFixtureOwner();
+
+        Map<String, Object> seat = jdbcTemplate.queryForMap("""
+                SELECT s.seat_number,
+                       s.seat_type,
+                       c.carriage_number
+                FROM train_seats s
+                JOIN train_carriages c
+                  ON c.id = s.carriage_id
+                 AND c.train_trip_id = s.train_trip_id
+                WHERE s.id = ?
+                """, seatId);
+
+        Map<String, Object> boarding = stopRow(trainTripId, fromSequence);
+        Map<String, Object> alighting = stopRow(trainTripId, toSequence);
+
+        jdbcTemplate.update("""
+                INSERT INTO ticket_orders (
+                    user_id, train_trip_id, passenger_id,
+                    passenger_name, passenger_id_card,
+                    status, pay_deadline, purchase_mode,
+                    departure_sequence, arrival_sequence,
+                    departure_station_code, departure_station_name,
+                    departure_at,
+                    arrival_station_code, arrival_station_name,
+                    arrival_at,
+                    seat_type, amount_cents, seat_id,
+                    carriage_number, seat_number
+                )
+                VALUES (
+                    ?, ?, ?, ?, ?,
+                    'PAID', DATE_ADD(NOW(), INTERVAL 30 MINUTE), 'SEAT',
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?,
+                    ?, ?, ?, ?, ?
+                )
+                """,
+                fixtureUserId, trainTripId, fixturePassengerId,
+                "Fixture Rider", FIXTURE_ID_CARD,
+                fromSequence, toSequence,
+                boarding.get("station_code"), boarding.get("station_name"),
+                boarding.get("departure_at"),
+                alighting.get("station_code"), alighting.get("station_name"),
+                alighting.get("arrival_at"),
+                seat.get("seat_type"), 1000, seatId,
+                seat.get("carriage_number"), seat.get("seat_number"));
+
+        return jdbcTemplate.queryForObject("""
+                SELECT MAX(id)
+                FROM ticket_orders
+                WHERE train_trip_id = ?
+                """, Long.class, trainTripId);
+    }
+
+    private Map<String, Object> stopRow(Long trainTripId, int sequence) {
+        return jdbcTemplate.queryForMap("""
+                SELECT st.code AS station_code,
+                       st.name AS station_name,
+                       s.arrival_at,
+                       s.departure_at
+                FROM train_trip_stops s
+                JOIN stations st ON st.id = s.station_id
+                WHERE s.train_trip_id = ?
+                  AND s.stop_sequence = ?
+                """, trainTripId, sequence);
+    }
+
+    private void ensureFixtureOwner() {
+        if(fixtureUserId != null) {
+            return;
+        }
+
+        String username = "seat_fixture_" + uniqueSuffix();
+        jdbcTemplate.update("""
+                INSERT INTO users (username, password_hash)
+                VALUES (?, ?)
+                """, username, "fixture");
+
+        fixtureUserId = jdbcTemplate.queryForObject(
+                "SELECT id FROM users WHERE username = ?",
+                Long.class, username);
+
+        jdbcTemplate.update("""
+                INSERT INTO passengers (user_id, real_name, id_card, phone)
+                VALUES (?, ?, ?, ?)
+                """, fixtureUserId, "Fixture Rider",
+                FIXTURE_ID_CARD, "13800000001");
+
+        fixturePassengerId = jdbcTemplate.queryForObject("""
+                SELECT id
+                FROM passengers
+                WHERE user_id = ?
+                  AND id_card = ?
+                """, Long.class, fixtureUserId, FIXTURE_ID_CARD);
     }
 
     private void deleteSegment(Long seatId, int segmentSequence) {

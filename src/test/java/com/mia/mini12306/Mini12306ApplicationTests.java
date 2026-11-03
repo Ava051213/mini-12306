@@ -56,7 +56,10 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
             ORDER BY installed_rank
             """, String.class);
 
-        assertEquals(List.of("1", "2", "3", "4", "5", "6", "7", "8"), versions);
+        assertEquals(
+                List.of("1", "2", "3", "4", "5", "6", "7", "8", "9"),
+                versions
+        );
 
         Long failedCount = jdbcTemplate.queryForObject("""
             SELECT COUNT(*)
@@ -277,6 +280,7 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
             """, String.class);
 
         assertEquals(List.of(
+                "order_id->id",
                 "train_trip_id->train_trip_id",
                 "seat_id->id",
                 "train_trip_id->train_trip_id",
@@ -302,6 +306,7 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
             """, String.class);
 
         assertEquals(List.of(
+                "chk_train_seat_segments_order",
                 "chk_train_seat_segments_sequence",
                 "chk_train_seat_segments_status"
         ), segmentChecks);
@@ -320,9 +325,11 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
 
         assertEquals(List.of(
                 "chk_ticket_orders_amount",
+                "chk_ticket_orders_interval_snapshot",
                 "chk_ticket_orders_legacy_snapshot",
-                "chk_ticket_orders_priced_snapshot",
                 "chk_ticket_orders_purchase_mode",
+                "chk_ticket_orders_quantity_snapshot",
+                "chk_ticket_orders_seat_snapshot",
                 "chk_ticket_orders_seat_type",
                 "chk_ticket_orders_sequence_order"
         ), orderChecks);
@@ -336,8 +343,7 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
         """, String.class);
 
         assertEquals(List.of(
-                "chk_order_idempotency_legacy_seat",
-                "chk_order_idempotency_priced_seat",
+                "chk_order_idempotency_interval",
                 "chk_order_idempotency_purchase_mode",
                 "chk_order_idempotency_seat_type"
         ), idempotencyChecks);
@@ -431,8 +437,10 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
             ORDER BY REFERENCED_TABLE_NAME
             """, String.class);
 
-        assertEquals(List.of("train_seats", "train_trip_stops"),
-                segmentForeignTables);
+        assertEquals(
+                List.of("ticket_orders", "train_seats", "train_trip_stops"),
+                segmentForeignTables
+        );
 
         // A CHECK that exists but is disabled would pass a name-only check.
         List<String> disabledChecks = jdbcTemplate.queryForList("""
@@ -463,6 +471,7 @@ class Mini12306ApplicationTests extends DatabaseIntegrationTest {
             """, String.class);
 
         assertEquals(List.of(
+                "chk_train_seat_segments_order:seat_status",
                 "chk_train_seat_segments_sequence:segment_sequence",
                 "chk_train_seat_segments_status:seat_status",
                 "chk_train_seats_seat_type:seat_type"

@@ -8,6 +8,8 @@ public record OrderIdempotency(
     Long trainTripId,
     Long passengerId,
     Integer seatType,
+    String departureStationCode,
+    String arrivalStationCode,
     Long orderId
 ) {
 }

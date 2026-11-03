@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.mia.mini12306.station.RouteBoundaryStop;
 import com.mia.mini12306.station.Station;
 import com.mia.mini12306.station.TrainTripStopRow;
+import com.mia.mini12306.station.TripStopDetail;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -60,6 +61,22 @@ public interface StationQueryMapper extends BaseMapper<Station> {
             ORDER BY s.stop_sequence
             """)
     List<RouteBoundaryStop> findRouteBoundaryStops(
+            @Param("trainTripId") Long trainTripId
+    );
+
+    // Purchase needs the code, the sequence and both times of every stop.
+    @Select("""
+            SELECT s.stop_sequence AS stopSequence,
+                   st.code AS stationCode,
+                   st.name AS stationName,
+                   s.arrival_at AS arrivalAt,
+                   s.departure_at AS departureAt
+            FROM train_trip_stops s 
+            JOIN stations st ON st.id = s.station_id
+            WHERE s.train_trip_id = #{trainTripId}
+            ORDER BY s.stop_sequence
+            """)
+    List<TripStopDetail> findStopWithCodes(
             @Param("trainTripId") Long trainTripId
     );
 }

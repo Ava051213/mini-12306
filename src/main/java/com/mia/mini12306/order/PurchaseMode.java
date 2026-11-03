@@ -6,5 +6,8 @@ public enum PurchaseMode {
     LEGACY,
 
     // Orders priced by the server from the full-route interval price.
-    PRICED
+    PRICED,
+
+    // Orders that hold concrete seat segments for the purchased interval.
+    SEAT
 }

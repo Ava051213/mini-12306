@@ -1,5 +1,6 @@
 package com.mia.mini12306.order.mapper;
 
+import com.mia.mini12306.order.OrderReleaseTarget;
 import com.mia.mini12306.order.OrderStatus;
 import com.mia.mini12306.order.TicketOrder;
 import org.apache.ibatis.annotations.*;
@@ -18,7 +19,8 @@ public interface TicketOrderMapper {
                 departure_sequence, arrival_sequence,
                 departure_station_code, departure_station_name, departure_at,
                 arrival_station_code, arrival_station_name, arrival_at,
-                seat_type, amount_cents
+                seat_type, amount_cents,
+                seat_id, carriage_number, seat_number
             )
             VALUES (
                 #{userId}, #{trainTripId}, #{passengerId},
@@ -28,7 +30,8 @@ public interface TicketOrderMapper {
                 #{departureSequence}, #{arrivalSequence},
                 #{departureStationCode}, #{departureStationName}, #{departureAt},
                 #{arrivalStationCode}, #{arrivalStationName}, #{arrivalAt},
-                #{seatType}, #{amountCents}
+                #{seatType}, #{amountCents},
+                #{seatId}, #{carriageNumber}, #{seatNumber}
             )
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
@@ -54,6 +57,9 @@ public interface TicketOrderMapper {
                    arrival_at AS arrivalAt,
                    seat_type AS seatType,
                    amount_cents AS amountCents,
+                   seat_id AS seatId,
+                   carriage_number AS carriageNumber,
+                   seat_number AS seatNumber,
                    pay_deadline AS payDeadline,
                    created_at AS createdAt,
                    updated_at AS updatedAt
@@ -94,6 +100,9 @@ public interface TicketOrderMapper {
                    arrival_at AS arrivalAt,
                    seat_type AS seatType,
                    amount_cents AS amountCents,
+                   seat_id AS seatId,
+                   carriage_number AS carriageNumber,
+                   seat_number AS seatNumber,
                    pay_deadline AS payDeadline,
                    created_at AS createdAt,
                    updated_at AS updatedAt
@@ -156,6 +165,10 @@ public interface TicketOrderMapper {
                    arrival_at AS arrivalAt,
                    seat_type AS seatType,
                    amount_cents AS amountCents,
+                   seat_id AS seatId,
+                   carriage_number AS carriageNumber,
+                   seat_number AS seatNumber,
+
                    pay_deadline AS payDeadline,
                    created_at AS createdAt,
                    updated_at AS updatedAt
@@ -197,4 +210,16 @@ public interface TicketOrderMapper {
             WHERE id = #{id}
             """)
     Long findTrainTripIdById(@Param("id") Long id);
+
+    // Read the release facts after the status change, inside the same transaction.
+    @Select("""
+            SELECT id,
+                   purchase_mode AS purchaseMode,
+                   train_trip_id AS trainTripId,
+                   departure_sequence AS departureSequence,
+                   arrival_sequence AS arrivalSequence
+            FROM ticket_orders
+            WHERE id = #{id}
+            """)
+    OrderReleaseTarget findReleaseTargetById(@Param("id") Long id);
 }
